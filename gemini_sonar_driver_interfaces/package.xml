@@ -1,13 +1,11 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>template_pkg_interfaces</name>
+  <name>gemini_sonar_driver_interfaces</name>
   <version>1.0.0</version>
-  <description>template_pkg interface definitions</description>
-  <!-- TODO: Update the maintainer email and name below -->
-  <maintainer email="me@todo.com">@todo</maintainer>
-  <!-- TODO: Update the license below (e.g., MIT, Apache-2.0, BSD) -->
-  <license>@todo</license>
+  <description>gemini_sonar_driver interface definitions</description>
+  <maintainer email="jake@bonrov.com">Jake</maintainer>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

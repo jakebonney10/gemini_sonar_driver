@@ -8,7 +8,7 @@ set(ROS_DEPENDS
     ament_cmake
     rclcpp
     std_msgs
-    template_pkg_interfaces
+    gemini_sonar_driver_interfaces
   )
 
 set(EXTERNAL_DEPENDS
