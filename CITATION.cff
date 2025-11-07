@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+# TODO: Update the author information below
+authors:
+- family-names: "@todo"
+  given-names: "@todo"
+  orcid: "https://orcid.org/@todo"
+# TODO: Update the title below
+title: "Template_Package"
+version: 1.0.0
+date-released: 2024-01-25
+# TODO: Update the URL below
+url: ""
