@@ -22,3 +22,6 @@ log/
 
 # Documentation build
 docs/_doxygen/
+
+# Gemini SDK
+GeminiSDK_*/
