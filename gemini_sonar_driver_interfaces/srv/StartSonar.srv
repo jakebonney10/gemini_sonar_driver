@@ -1,0 +1,8 @@
+# Service to start the Gemini sonar
+# Request
+bool enable_logging  # Enable native Gemini format logging
+string log_directory  # Directory for native logs (optional, uses default if empty)
+---
+# Response
+bool success
+string message

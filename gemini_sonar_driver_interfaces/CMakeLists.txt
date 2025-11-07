@@ -9,8 +9,13 @@ find_package(std_msgs REQUIRED)
 set(MSG_FILES
     "msg/RawPacket.msg")
 
+set(SRV_FILES
+    "srv/StartSonar.srv"
+    "srv/StopSonar.srv")
+
 rosidl_generate_interfaces(${PROJECT_NAME}
     ${MSG_FILES}
+    ${SRV_FILES}
     DEPENDENCIES
     std_msgs)
 

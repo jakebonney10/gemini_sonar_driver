@@ -6,7 +6,7 @@
   namespace CMAKE_PACKAGE_NAME { */
 
 #define NS_HEAD  \
-  namespace template_pkg {
+  namespace gemini_sonar_driver {
 
 #define NS_FOOT  \
   }

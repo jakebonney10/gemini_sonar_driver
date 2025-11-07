@@ -8,7 +8,10 @@ set(ROS_DEPENDS
     ament_cmake
     rclcpp
     std_msgs
+    sensor_msgs
+    marine_acoustic_msgs
     gemini_sonar_driver_interfaces
+    rosbag2_cpp
   )
 
 set(EXTERNAL_DEPENDS
@@ -63,7 +66,12 @@ file(GLOB NODES CONFIGURE_DEPENDS
 
 include_directories(
   include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include
 )
+
+# Link Gemini SDK library
+set(GEMINI_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64)
+link_directories(${GEMINI_SDK_DIR}/libs)
 
 ###########
 ## Build ##
@@ -80,6 +88,9 @@ foreach(NODE_FILE ${NODES})
   add_executable(${NODE_NAME} ${NODE_FILE} ${HDRS} ${SRCS})
   ament_target_dependencies(${NODE_NAME} ${ROS_DEPENDS} ${EXTERNAL_DEPENDS_LIB})
   target_include_directories(${NODE_NAME} PRIVATE "include/${PROJECT_NAME}/")
+  
+  # Link Gemini SDK library
+  target_link_libraries(${NODE_NAME} GeminiComms)
 endforeach(NODE_FILE)
 
 

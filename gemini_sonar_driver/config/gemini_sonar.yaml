@@ -1,0 +1,27 @@
+/**:
+  ros__parameters:
+    # Network Configuration
+    sonar_id: 1
+    software_mode: "Evo"  # Options: Evo, EvoC, SeaNet, SeaNetC
+    
+    # Sonar Operation Parameters
+    range_m: 75.0          # Range in meters (max ~300m for 720kHz)
+    gain_percent: 50.0     # Receiver gain 0-100%
+    sound_speed_ms: 1500   # Sound speed in m/s
+    frequency_khz: 720.0   # Operating frequency (720, 1200 kHz typically)
+    
+    # Image/Data Parameters
+    num_beams: 512         # Number of beams (typical: 256, 512)
+    bins_per_beam: 1500    # Range cells per beam
+    beam_spacing_deg: 0.25 # Beam spacing in degrees
+    
+    # Logging Configuration
+    enable_native_logging: true
+    native_log_directory: "~/gemini_logs"  # Directory for native format logs
+    
+    # Topic Names
+    topics:
+      raw_sonar_image: "gemini/raw_sonar_image"
+      projected_sonar_image: "gemini/projected_sonar"
+      sonar_detections: "gemini/detections"
+      raw_packet: "gemini/raw"

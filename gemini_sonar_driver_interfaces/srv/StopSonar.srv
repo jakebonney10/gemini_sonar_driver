@@ -1,0 +1,7 @@
+# Service to stop the Gemini sonar
+# Request
+bool save_configuration  # Save current configuration before stopping
+---
+# Response
+bool success
+string message
