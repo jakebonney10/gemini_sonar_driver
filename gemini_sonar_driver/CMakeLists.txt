@@ -69,6 +69,7 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/Svs5Seq
   ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/Gemini
+  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/GenesisSerializer
 )
 
 # Link Gemini SDK libraries (using bin/ directory for shared libraries)

@@ -242,11 +242,16 @@ void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int 
             break;
             
         case SequencerApi::GLF_LIVE_TARGET_IMAGE:
-            // This is the processed sonar image data (GLF format)
-            RCLCPP_DEBUG(this->get_logger(), "Received GLF_LIVE_TARGET_IMAGE");
-            // Parse GLF::CTargetImageData structure
-            processPingData(value, size);
+        {
+            // Cast the value pointer to GLF::GLogTargetImage structure
+            GLF::GLogTargetImage* image = (GLF::GLogTargetImage*)value;
+            if (image)
+            {
+                RCLCPP_DEBUG(this->get_logger(), "Received GLF_LIVE_TARGET_IMAGE");
+                processGLFImage(*image);
+            }
             break;
+        }
             
         case SequencerApi::SENSOR_RECORD:
             RCLCPP_DEBUG(this->get_logger(), "Received SENSOR_RECORD");
@@ -263,25 +268,98 @@ void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int 
     }
 }
 
-void GeminiSonarNode::processPingData(const char* data, int length)
+void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
 {
-    // The Svs5Sequencer provides processed sonar image data in GLF format
-    // This contains the full formed beams with metadata
-    // TODO: Parse GLF::CTargetImageData structure from Svs5SequencerStructures.h
-    
     std::lock_guard<std::mutex> lock(data_mutex_);
-    
-    // For now, use a simplified approach - extract beam data directly
-    // In production, you should properly parse the GLF::CTargetImageData structure
     
     ping_number_++;
     rclcpp::Time timestamp = this->now();
     
-    // Publish messages using the conversions module
-    // Note: You'll need to properly parse the GLF format to extract beam data
-    // This is a placeholder that shows the pattern
+    // Extract image data from GLF structure
+    const GLF::GMainImage& mainImage = image.m_mainImage;
     
-    RCLCPP_DEBUG(this->get_logger(), "Processing ping data (length=%d bytes)", length);
+    // Get image dimensions
+    const std::vector<UInt8>* imageData = mainImage.m_vecData;
+    const std::vector<double>* bearingTable = mainImage.m_vecBearingTable;
+    
+    if (!imageData || !bearingTable || imageData->empty() || bearingTable->empty())
+    {
+        RCLCPP_WARN(this->get_logger(), "GLF image data or bearing table is empty");
+        return;
+    }
+    
+    // Calculate dimensions
+    size_t num_beams = bearingTable->size();
+    size_t total_samples = imageData->size();
+    size_t samples_per_beam = (num_beams > 0) ? (total_samples / num_beams) : 0;
+    
+    if (samples_per_beam == 0)
+    {
+        RCLCPP_WARN(this->get_logger(), "Invalid GLF image dimensions");
+        return;
+    }
+    
+    RCLCPP_DEBUG(this->get_logger(), 
+                 "GLF Image: beams=%zu, samples_per_beam=%zu, total=%zu bytes",
+                 num_beams, samples_per_beam, total_samples);
+    
+    // Convert GLF data to beam structure for conversions module
+    std::vector<std::vector<uint8_t>> beam_data;
+    beam_data.reserve(num_beams);
+    
+    for (size_t beam_idx = 0; beam_idx < num_beams; ++beam_idx)
+    {
+        size_t start_idx = beam_idx * samples_per_beam;
+        size_t end_idx = start_idx + samples_per_beam;
+        
+        if (end_idx <= imageData->size())
+        {
+            std::vector<uint8_t> beam_samples(
+                imageData->begin() + start_idx,
+                imageData->begin() + end_idx
+            );
+            beam_data.push_back(std::move(beam_samples));
+        }
+    }
+    
+    // Update conversion parameters from GLF metadata
+    conversion_params_.num_beams = num_beams;
+    conversion_params_.bins_per_beam = samples_per_beam;
+    conversion_params_.frequency_khz = mainImage.m_uiModulationFrequency / 1000.0;
+    conversion_params_.sound_speed_ms = mainImage.m_fSosAtXd;
+    
+    // Calculate range from start/end range fields
+    float range_bins = mainImage.m_uiEndRange - mainImage.m_uiStartRange;
+    conversion_params_.range_m = (range_bins * conversion_params_.sound_speed_ms) / 
+                                  (2.0 * conversion_params_.frequency_khz * 1000.0);
+    
+    // Use actual bearing table instead of calculated angles
+    // (The bearing table provides the precise beam angles from the sonar)
+    
+    // Publish messages using the conversions module
+    auto raw_msg = conversions::createRawSonarImage(beam_data, conversion_params_, timestamp);
+    if (raw_msg)
+    {
+        publishers_.raw_sonar_image_->publish(*raw_msg);
+    }
+    
+    auto detections_msg = conversions::createSonarDetections(beam_data, conversion_params_, timestamp);
+    if (detections_msg)
+    {
+        publishers_.sonar_detections_->publish(*detections_msg);
+    }
+    
+    // Publish projected image periodically (every 10 pings)
+    if (ping_number_ % 10 == 0)
+    {
+        auto proj_msg = conversions::createProjectedSonarImage(beam_data, conversion_params_, timestamp);
+        if (proj_msg)
+        {
+            publishers_.projected_sonar_image_->publish(*proj_msg);
+        }
+    }
+    
+    RCLCPP_DEBUG(this->get_logger(), "Published ping %u", ping_number_);
 }
 
 //=============================================================================

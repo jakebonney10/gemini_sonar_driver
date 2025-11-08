@@ -32,8 +32,10 @@
 #endif
 
 // Gemini SDK Svs5Sequencer API (high-level interface)
+#include "types.h"  // UInt8, UInt16, UInt32 typedefs
 #include "Svs5Seq/Svs5SequencerApi.h"
 #include "Gemini/GeminiStructuresPublic.h"
+#include "GenesisSerializer/GlfLoggerGeminiStructure.h"
 
 NS_HEAD
 
@@ -137,9 +139,9 @@ protected:
     void processSvs5Message(unsigned int messageType, unsigned int size, const char* const value);
 
     /**
-     * @brief Process sonar ping data (GLF target image)
+     * @brief Process GLF sonar image data
      */
-    void processPingData(const char* data, int length);
+    void processGLFImage(const GLF::GLogTargetImage& image);
 
     /**
      * @brief Initialize the Gemini SDK and configure sonar
