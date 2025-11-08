@@ -31,9 +31,9 @@
 #endif
 #endif
 
-// Gemini SDK includes (order matters: structures must come before comms)
+// Gemini SDK Svs5Sequencer API (high-level interface)
+#include "Svs5Seq/Svs5SequencerApi.h"
 #include "Gemini/GeminiStructuresPublic.h"
-#include "Gemini/GeminiCommsPublic.h"
 
 NS_HEAD
 
@@ -126,30 +126,20 @@ protected:
         std::shared_ptr<gemini_sonar_driver_interfaces::srv::StopSonar::Response> response);
 
     /**
-     * @brief Static callback function for Gemini SDK data
+     * @brief Static callback function for Svs5Sequencer API
      * This is called by the SDK when data is received
      */
-    static void geminiDataCallback(int messageType, int length, char* dataBlock);
+    static void svs5DataCallback(unsigned int messageType, unsigned int size, const char* const value);
 
     /**
-     * @brief Instance method to process Gemini data
+     * @brief Instance method to process Svs5 messages
      */
-    void processGeminiData(int messageType, int length, char* dataBlock);
+    void processSvs5Message(unsigned int messageType, unsigned int size, const char* const value);
 
     /**
-     * @brief Process ping head message
+     * @brief Process sonar ping data (GLF target image)
      */
-    void processPingHead(const char* data, int length);
-
-    /**
-     * @brief Process ping line message (beam data)
-     */
-    void processPingLine(const char* data, int length);
-
-    /**
-     * @brief Process ping tail message
-     */
-    void processPingTail(const char* data, int length);
+    void processPingData(const char* data, int length);
 
     /**
      * @brief Initialize the Gemini SDK and configure sonar

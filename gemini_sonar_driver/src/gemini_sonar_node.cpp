@@ -220,143 +220,68 @@ void GeminiSonarNode::handleStopSonar(
 }
 
 //=============================================================================
-// Gemini SDK Callbacks
+// Svs5Sequencer SDK Callbacks
 //=============================================================================
 
-void GeminiSonarNode::geminiDataCallback(int messageType, int length, char* dataBlock)
-{
-    if (instance_ != nullptr)
-    {
-        instance_->processGeminiData(messageType, length, dataBlock);
-    }
-}
-
-void GeminiSonarNode::processGeminiData(int messageType, int length, char* dataBlock)
+void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int size, const char* const value)
 {
     // Publish raw packet
     auto raw_msg = std::make_shared<gemini_sonar_driver_interfaces::msg::RawPacket>();
     raw_msg->header.stamp = this->now();
     raw_msg->header.frame_id = "gemini";
     raw_msg->message_type = messageType;
-    raw_msg->data.assign(dataBlock, dataBlock + length);
+    raw_msg->data.assign(value, value + size);
     publishers_.raw_packet_->publish(*raw_msg);
     
-    // Process based on message type
-    switch (messageType)
+    // Process based on Svs5 message type
+    switch (static_cast<SequencerApi::ESvs5MessageType>(messageType))
     {
-        case 1:  // Ping Head
-            processPingHead(dataBlock, length);
+        case SequencerApi::GEMINI_STATUS:
+            RCLCPP_DEBUG(this->get_logger(), "Received GEMINI_STATUS message");
+            // Parse CGeminiStatusData structure for sonar health/status
             break;
             
-        case 2:  // Ping Line (beam data)
-            processPingLine(dataBlock, length);
+        case SequencerApi::GLF_LIVE_TARGET_IMAGE:
+            // This is the processed sonar image data (GLF format)
+            RCLCPP_DEBUG(this->get_logger(), "Received GLF_LIVE_TARGET_IMAGE");
+            // Parse GLF::CTargetImageData structure
+            processPingData(value, size);
             break;
             
-        case 3:  // Ping Tail
-            processPingTail(dataBlock, length);
+        case SequencerApi::SENSOR_RECORD:
+            RCLCPP_DEBUG(this->get_logger(), "Received SENSOR_RECORD");
+            // Parse sensor data (GPS, compass, etc.)
+            break;
+            
+        case SequencerApi::FRAME_RATE:
+            RCLCPP_DEBUG(this->get_logger(), "Received FRAME_RATE message");
             break;
             
         default:
-            RCLCPP_DEBUG(this->get_logger(), "Received unknown message type: %d", messageType);
+            RCLCPP_DEBUG(this->get_logger(), "Received Svs5 message type: %u", messageType);
             break;
     }
 }
 
-void GeminiSonarNode::processPingHead(const char* data, int length)
+void GeminiSonarNode::processPingData(const char* data, int length)
 {
+    // The Svs5Sequencer provides processed sonar image data in GLF format
+    // This contains the full formed beams with metadata
+    // TODO: Parse GLF::CTargetImageData structure from Svs5SequencerStructures.h
+    
     std::lock_guard<std::mutex> lock(data_mutex_);
     
-    // Reset ping data
-    current_ping_beams_.clear();
-    ping_complete_ = false;
+    // For now, use a simplified approach - extract beam data directly
+    // In production, you should properly parse the GLF::CTargetImageData structure
     
-    // Parse ping head structure from Gemini SDK
-    const CGemPingHead* ping_head = reinterpret_cast<const CGemPingHead*>(data);
-    
-    // Extract ping metadata
-    ping_number_ = ping_head->m_pingID;
-    
-    // Calculate actual range from start/end range fields
-    // These are typically in units of sound speed bins
-    range_m_ = (ping_head->m_endRange - ping_head->m_startRange) * 
-               (ping_head->m_sosUsed / 2000.0);  // Convert to meters
-    
-    // Extract timestamp (64-bit timestamp from two 32-bit fields)
-    uint64_t timestamp_us = (static_cast<uint64_t>(ping_head->m_transmitTimestampH) << 32) | 
-                            ping_head->m_transmitTimestampL;
-    ping_time_ = timestamp_us / 1000000.0;  // Convert to seconds
-    
-    RCLCPP_DEBUG(this->get_logger(), 
-                 "Ping head: ID=%d, Range=%.1fm, Beams=%d, SOS=%d m/s",
-                 ping_number_, range_m_, ping_head->m_numBeams, ping_head->m_sosUsed);
-}
-
-void GeminiSonarNode::processPingLine(const char* data, int length)
-{
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    
-    // Parse ping line structure from Gemini SDK
-    // Each line represents one beam's intensity data
-    const CGemPingLine* ping_line = reinterpret_cast<const CGemPingLine*>(data);
-    
-    // Get the actual data width (number of samples in this beam)
-    int line_width = ping_line->GetLineWidth();
-    
-    // Extract the beam data (starts after the CGemPingLine header)
-    const uint8_t* beam_data_ptr = reinterpret_cast<const uint8_t*>(&ping_line->m_startOfData);
-    
-    // Store beam data as vector
-    std::vector<uint8_t> beam_data(beam_data_ptr, beam_data_ptr + line_width);
-    current_ping_beams_.push_back(beam_data);
-    
-    RCLCPP_DEBUG(this->get_logger(), 
-                 "Received beam %zu: line_id=%d, width=%d samples, gain=%d, scale=%d",
-                 current_ping_beams_.size(), ping_line->m_lineID, 
-                 line_width, ping_line->m_gain, ping_line->m_scale);
-}
-
-void GeminiSonarNode::processPingTail(const char* data, int length)
-{
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    
-    ping_complete_ = true;
     ping_number_++;
-    
-    RCLCPP_DEBUG(this->get_logger(), "Received ping tail - ping complete");
-    
-    // Check if we have beam data to publish
-    if (current_ping_beams_.empty())
-    {
-        RCLCPP_WARN(this->get_logger(), "Ping complete but no beam data available");
-        return;
-    }
-    
-    // Use conversions module to create messages
     rclcpp::Time timestamp = this->now();
     
-    // Publish complete ping as RawSonarImage
-    auto raw_msg = conversions::createRawSonarImage(current_ping_beams_, conversion_params_, timestamp);
-    if (raw_msg)
-    {
-        publishers_.raw_sonar_image_->publish(*raw_msg);
-    }
+    // Publish messages using the conversions module
+    // Note: You'll need to properly parse the GLF format to extract beam data
+    // This is a placeholder that shows the pattern
     
-    // Publish SonarDetections (best for FLS data analysis)
-    auto detections_msg = conversions::createSonarDetections(current_ping_beams_, conversion_params_, timestamp);
-    if (detections_msg)
-    {
-        publishers_.sonar_detections_->publish(*detections_msg);
-    }
-    
-    // Publish projected sonar image periodically (every 10 pings)
-    if (ping_number_ % 10 == 0)
-    {
-        auto proj_msg = conversions::createProjectedSonarImage(current_ping_beams_, conversion_params_, timestamp);
-        if (proj_msg)
-        {
-            publishers_.projected_sonar_image_->publish(*proj_msg);
-        }
-    }
+    RCLCPP_DEBUG(this->get_logger(), "Processing ping data (length=%d bytes)", length);
 }
 
 //=============================================================================
@@ -365,28 +290,35 @@ void GeminiSonarNode::processPingTail(const char* data, int length)
 
 bool GeminiSonarNode::initializeGeminiSDK()
 {
-    RCLCPP_INFO(this->get_logger(), "Initializing Gemini SDK...");
+    RCLCPP_INFO(this->get_logger(), "Initializing Gemini SDK (Svs5Sequencer API)...");
     
-    // Set software mode
-    GEM_SetGeminiSoftwareMode(parameters_.software_mode.c_str());
+    // Set the static instance pointer for the callback
+    instance_ = this;
     
-    // Set callback function
-    GEM_SetHandlerFunction(&GeminiSonarNode::geminiDataCallback);
+    // Create the callback lambda
+    SequencerApi::Svs5Callback callback = [](unsigned int msgType, unsigned int size, const char* const value) {
+        if (instance_) {
+            instance_->processSvs5Message(msgType, size, value);
+        }
+    };
     
-    // Start network interface
-    int result = GEM_StartGeminiNetworkWithResult(parameters_.sonar_id, false);
+    // Start the Svs5 library - auto-discovers sonars on the network
+    Svs5ErrorCode result = SequencerApi::StartSvs5(callback, false);
     
-    if (result == 1)
+    if (result != SVS5_SEQUENCER_STATUS_OK)
     {
-        sdk_initialized_ = true;
-        return true;
-    }
-    else
-    {
-        RCLCPP_ERROR(this->get_logger(), 
-                     "Failed to initialize Gemini network. Another program may be using it.");
+        RCLCPP_ERROR(this->get_logger(), "Failed to start Svs5 library. Error code: 0x%08lX", result);
+        if (result == SVS5_SEQUENCER_ANOTHER_INSTANCE_RUNNING) {
+            RCLCPP_ERROR(this->get_logger(), "  -> Another instance running (check for other Tritech software)");
+        }
         return false;
     }
+    
+    RCLCPP_INFO(this->get_logger(), "Svs5 library started successfully");
+    RCLCPP_INFO(this->get_logger(), "Library version: %s", SequencerApi::GetLibraryVersionInfo());
+    
+    sdk_initialized_ = true;
+    return true;
 }
 
 bool GeminiSonarNode::configureSonar()
@@ -397,64 +329,100 @@ bool GeminiSonarNode::configureSonar()
         return false;
     }
     
-    RCLCPP_INFO(this->get_logger(), "Configuring MK2 Gemini 1200ik sonar parameters:");
+    RCLCPP_INFO(this->get_logger(), "Configuring Gemini 1200ik sonar via Svs5Sequencer:");
     RCLCPP_INFO(this->get_logger(), "  Range: %.1f m", parameters_.range_m);
     RCLCPP_INFO(this->get_logger(), "  Gain: %.1f %%", parameters_.gain_percent);
     RCLCPP_INFO(this->get_logger(), "  Sound Speed: %d m/s", parameters_.sound_speed_ms);
-    RCLCPP_INFO(this->get_logger(), "  Frequency: %.1f kHz", parameters_.frequency_khz);
     RCLCPP_INFO(this->get_logger(), "  Number of Beams: %d", parameters_.num_beams);
     
-    // MK2 Configuration (for Gemini 1200ik)
+    Svs5ErrorCode result;
     
-    // 1. Set head type for 1200ik
-    GEMX_SetHeadType(parameters_.sonar_id, GEM_HEADTYPE_MK2_1200IK);
-    
-    // 2. Set optimal transmit pulse length for the specified range
-    unsigned short tx_length = GEMX_AutoTXLength(parameters_.sonar_id, static_cast<float>(parameters_.range_m));
-    RCLCPP_INFO(this->get_logger(), "  TX Pulse Length: %d cycles", tx_length);
-    
-    // 3. Set number of beams (256 or 512 for 1200ik)
-    GEMX_SetGeminiBeams(parameters_.sonar_id, static_cast<unsigned short>(parameters_.num_beams));
-    
-    // 4. Configure gain and speed of sound via velocimeter mode
-    // For MK2, the actual gain/SOS values are set in the ping config structure
-    // that gets populated and sent by GEMX_SendGeminiPingConfig()
-    // gainMode: 1 = Manual gain
-    // outputMode: 1 = Use manually specified SOS
-    GEMX_SetVelocimeterMode(parameters_.sonar_id, 1, 1);
-    
-    // NOTE: For MK2 sonars, gain and SOS are embedded in the ping configuration
-    // message sent by GEMX_SendGeminiPingConfig(). The SDK uses the last values
-    // set via GEMX_AutoPingConfig() or internal defaults.
-    // 
-    // Since we can't set them directly with low-level GEMX API for MK2,
-    // we have three options:
-    // A) Use the values from a previous GEMX_AutoPingConfig() call (MK1 function)
-    // B) Use Sequencer API (SequencerApi::Svs5SetConfiguration)
-    // C) Accept SDK defaults and adjust via sonar's web interface
-    //
-    // For now, we'll use option A - call the MK1 function which still works
-    // for setting gain/SOS on MK2 hardware (undocumented compatibility)
-    
-    GEMX_AutoPingConfig(
-        parameters_.sonar_id,
-        static_cast<float>(parameters_.range_m),
-        static_cast<unsigned short>(parameters_.gain_percent),
-        static_cast<float>(parameters_.sound_speed_ms)
+    // 1. Configure range
+    double range = parameters_.range_m;
+    result = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_RANGE,
+        sizeof(double),
+        &range,
+        parameters_.sonar_id
     );
+    if (result != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to set range");
+        return false;
+    }
     
-    // 5. Enable high range resolution (improves imagery at lower ranges)
-    // For 1200kHz: reduces range lines from 4mm to 2.4mm resolution
-    GEMX_AutoHighRangeResolution(parameters_.sonar_id, true);
+    // 2. Configure gain
+    int gain = static_cast<int>(parameters_.gain_percent);
+    result = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_GAIN,
+        sizeof(int),
+        &gain,
+        parameters_.sonar_id
+    );
+    if (result != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to set gain");
+        return false;
+    }
     
-    // 6. Configure chirp mode (auto enables/disables based on range)
-    GEMX_ConfigureChirpMode(parameters_.sonar_id, CHIRP_AUTO);
+    // 3. Configure speed of sound (manual mode)
+    SequencerApi::SequencerSosConfig sosConfig;
+    sosConfig.m_bUsedUserSos = true;  // Use manual SOS
+    sosConfig.m_manualSos = static_cast<float>(parameters_.sound_speed_ms);
     
-    // 7. Send the complete ping configuration to the sonar
-    // This sends all accumulated configuration including gain/SOS
-    GEMX_SendGeminiPingConfig(parameters_.sonar_id);
+    result = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_SOUND_VELOCITY,
+        sizeof(SequencerApi::SequencerSosConfig),
+        &sosConfig,
+        parameters_.sonar_id
+    );
+    if (result != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to set sound velocity");
+        return false;
+    }
     
-    RCLCPP_INFO(this->get_logger(), "MK2 sonar configuration sent successfully");
+    // 4. Configure image quality (beams)
+    SequencerApi::SonarImageQualityLevel qualityLevel;
+    if (parameters_.num_beams >= 512) {
+        qualityLevel.m_performance = SequencerApi::UL_HIGH_CPU;  // 512-1024 beams
+    } else {
+        qualityLevel.m_performance = SequencerApi::HIGH_CPU;      // 256-512 beams
+    }
+    qualityLevel.m_screenPixels = 2048;  // Highest quality
+    
+    result = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE,
+        sizeof(SequencerApi::SonarImageQualityLevel),
+        &qualityLevel,
+        parameters_.sonar_id
+    );
+    if (result != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_WARN(this->get_logger(), "Failed to set performance level (non-critical)");
+    }
+    
+    // 5. Enable high range resolution for 1200ik
+    bool highRes = true;
+    result = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_HIGH_RESOLUTION,
+        sizeof(bool),
+        &highRes,
+        parameters_.sonar_id
+    );
+    if (result != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_WARN(this->get_logger(), "Failed to set high resolution (non-critical)");
+    }
+    
+    // 6. Configure chirp mode (auto)
+    int chirpMode = 2;  // 0=disabled, 1=enabled, 2=auto
+    result = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_CHIRP_MODE,
+        sizeof(int),
+        &chirpMode,
+        parameters_.sonar_id
+    );
+    if (result != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_WARN(this->get_logger(), "Failed to set chirp mode (non-critical)");
+    }
+    
+    RCLCPP_INFO(this->get_logger(), "Sonar configuration sent successfully");
     return true;
 }
 
@@ -466,34 +434,65 @@ bool GeminiSonarNode::startPinging()
         return false;
     }
     
-    RCLCPP_INFO(this->get_logger(), "Starting sonar pinging...");
+    RCLCPP_INFO(this->get_logger(), "Starting sonar streaming...");
     
-    // Set ping mode to continuous pinging (mode 1)
-    // Mode 0: Single ping on receipt of config
-    // Mode 1: Continuous pinging at inter-ping period interval
-    GEMX_SetPingMode(parameters_.sonar_id, 1);
+    // Configure ping mode (free-running or interval-based)
+    SequencerApi::SequencerPingMode pingMode;
+    pingMode.m_bFreeRun = false;      // Ping at fixed interval
+    pingMode.m_msInterval = 100;      // 100ms between pings
+    pingMode.m_extTTLTrigger = false; // No external trigger
     
-    // Set inter-ping period (default to 100ms = 100000 microseconds)
-    // This controls how fast the sonar pings
-    GEMX_SetInterPingPeriod(parameters_.sonar_id, 100000);
+    Svs5ErrorCode result = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_PING_MODE,
+        sizeof(SequencerApi::SequencerPingMode),
+        &pingMode,
+        parameters_.sonar_id
+    );
     
-    // Send ping configuration to actually start pinging
-    GEMX_SendGeminiPingConfig(parameters_.sonar_id);
+    if (result != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to set ping mode");
+        return false;
+    }
+    
+    // Start streaming (set online mode)
+    bool online = true;
+    result = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_ONLINE,
+        sizeof(bool),
+        &online,
+        parameters_.sonar_id
+    );
+    
+    if (result != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to start sonar streaming");
+        return false;
+    }
     
     sonar_running_ = true;
-    RCLCPP_INFO(this->get_logger(), "Sonar pinging started");
+    RCLCPP_INFO(this->get_logger(), "Sonar streaming started");
     return true;
 }
 
 bool GeminiSonarNode::stopPinging()
 {
-    RCLCPP_INFO(this->get_logger(), "Stopping sonar pinging...");
+    RCLCPP_INFO(this->get_logger(), "Stopping sonar streaming...");
     
-    // Set ping mode to single ping (mode 0) to stop continuous pinging
-    GEMX_SetPingMode(parameters_.sonar_id, 0);
+    // Stop streaming (set offline mode)
+    bool online = false;
+    Svs5ErrorCode result = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_ONLINE,
+        sizeof(bool),
+        &online,
+        parameters_.sonar_id
+    );
+    
+    if (result != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to stop sonar streaming");
+        return false;
+    }
     
     sonar_running_ = false;
-    RCLCPP_INFO(this->get_logger(), "Sonar pinging stopped");
+    RCLCPP_INFO(this->get_logger(), "Sonar streaming stopped");
     return true;
 }
 
@@ -503,8 +502,8 @@ void GeminiSonarNode::shutdownGeminiSDK()
     {
         RCLCPP_INFO(this->get_logger(), "Shutting down Gemini SDK");
         
-        // Stop the Gemini network interface
-        GEM_StopGeminiNetwork();
+        // Stop the Svs5 library
+        SequencerApi::StopSvs5();
         
         sdk_initialized_ = false;
         RCLCPP_INFO(this->get_logger(), "Gemini SDK shutdown complete");
