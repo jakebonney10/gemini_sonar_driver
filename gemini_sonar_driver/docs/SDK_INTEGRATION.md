@@ -2,6 +2,227 @@
 
 This document describes how the Gemini sonar driver integrates with the Tritech Gemini SDK v2.0.41.0.
 
+## Network Architecture & Connection
+
+### Network Topology
+
+The Gemini SDK communicates with the sonar over **Ethernet using UDP**:
+
+```
+PC (192.168.0.x)  ←→  Network Switch  ←→  Gemini Sonar (192.168.0.y)
+    ↑                                              ↑
+    └── Port 50002 (SDK listens/sends)           └── Fixed/Alt IP
+```
+
+### IP Address Modes
+
+Gemini sonars support two IP address configurations:
+
+#### 1. Fixed IP Address (Factory Default)
+- **Primary:** `192.168.0.200` + Sonar ID offset
+- **Example:** Sonar ID 1 → `192.168.0.201`, Sonar ID 2 → `192.168.0.202`
+- **Subnet:** `255.255.255.0`
+- **Cannot be changed** (factory configured)
+
+#### 2. Alternate IP Address (User Configurable)
+- Can be set to any valid IP address
+- Configured via SDK: `GEMX_SetAltSonarIPAddress()`
+- Stored in sonar's non-volatile memory
+- Useful for integrating into existing networks
+
+### Network Discovery Process
+
+When `GEM_StartGeminiNetworkWithResult()` is called:
+
+1. **Opens UDP socket** on port `50002` (hardcoded in SDK)
+2. **Binds to all interfaces** (`INADDR_ANY`) to listen for broadcasts
+3. **Starts receive thread** to process incoming UDP packets
+4. **Waits for status broadcasts** from sonar
+5. **Identifies sonar** by Sonar ID in status packet
+6. **Establishes bidirectional communication**
+
+```cpp
+// Initialization sequence
+GEM_SetGeminiSoftwareMode("Evo");           // Set before starting network
+GEM_SetHandlerFunction(&callback);          // Register callback
+int result = GEM_StartGeminiNetworkWithResult(1, false);  // sonarID=1
+// result: 1=success, 0=failure (port in use)
+```
+
+### Broadcast vs Unicast
+
+The sonar can operate in two transmission modes:
+
+#### Status Broadcasts (Default: ENABLED)
+- Sonar sends **status packets** to broadcast address every 1 second
+- Destination: `192.168.0.255` (or subnet broadcast)
+- Allows multiple PCs to see the sonar
+- Discovery mechanism for SDK
+
+#### Ping Data (Default: UNICAST)
+- Ping data (head/line/tail) sent to **specific PC that requested ping**
+- Prevents network flooding with high-bandwidth data
+- Can be changed to broadcast with `GEMX_SetAltSonarIPAddressWithFlag()`
+
+### Port Configuration
+
+| Component | Port | Protocol | Direction | Purpose |
+|-----------|------|----------|-----------|---------|
+| **SDK** | 50002 | UDP | Listen | Receive all sonar messages |
+| **SDK** | 50002 | UDP | Send | Send commands to sonar |
+| **Sonar** | 50002 | UDP | Send | Status broadcasts |
+| **Sonar** | 50002 | UDP | Send | Ping data (to requestor) |
+
+**Critical:** Only **one process** can bind to port 50002 at a time. Running multiple SDK instances will fail with "port already in use."
+
+### Network Configuration Functions
+
+#### Get/Set Alternate IP
+```cpp
+// Get current alternate IP from sonar
+unsigned char a1, a2, a3, a4;  // IP octets
+unsigned char s1, s2, s3, s4;  // Subnet mask octets
+GEMX_GetAltSonarIPAddress(sonar_id, &a1, &a2, &a3, &a4, &s1, &s2, &s3, &s4);
+// Example result: 192.168.2.201 / 255.255.255.0
+
+// Set new alternate IP on sonar (stored in NV memory)
+GEMX_SetAltSonarIPAddress(sonar_id, 192, 168, 2, 201, 255, 255, 255, 0);
+```
+
+#### Use Alternate IP
+```cpp
+// Tell SDK to communicate using alternate IP instead of fixed IP
+GEMX_UseAltSonarIPAddress(sonar_id, 192, 168, 2, 201, 255, 255, 255, 0);
+
+// Or toggle between fixed and alternate
+GEMX_TxToAltIPAddress(sonar_id, 1);  // 1=use alt, 0=use fixed
+```
+
+#### Configure Broadcast Options
+```cpp
+// Advanced: Control broadcast behavior
+GEMX_SetAltSonarIPAddressWithFlag(
+    sonar_id,
+    3232236233,    // IP as uint32 (192.168.2.201)
+    4294967040,    // Subnet as uint32 (255.255.255.0)
+    0x0,           // broadcastStatus: 0x0=enabled, 0x01234567=disabled
+    0x01234567     // broadcastPing: 0x0=disabled, 0x01234567=enabled (720is only)
+);
+```
+
+### Multi-Sonar Support
+
+The SDK can communicate with multiple sonars simultaneously:
+
+```cpp
+// Sonar discovery
+unsigned short sonar_list[10];
+int num_sonars = GEMX_GetSonars(sonar_list);
+// Returns: Number of sonars found, populates sonar_list with IDs
+
+// Each sonar identified by unique Sonar ID
+// SDK internally routes messages based on ID
+GEM_StartGeminiNetworkWithResult(1, false);  // Talk to sonar ID 1
+GEM_StartGeminiNetworkWithResult(2, false);  // ERROR: Port already bound!
+```
+
+**Note:** `GEM_StartGeminiNetworkWithResult()` is called **once** and discovers **all sonars** on the network. The sonar ID parameter is primarily for internal tracking.
+
+### Connection Troubleshooting
+
+#### "Failed to initialize network" (Return 0)
+**Causes:**
+- Another SDK instance running (e.g., Tritech GUI app)
+- Port 50002 already bound by another process
+- Firewall blocking UDP port 50002
+
+**Solutions:**
+```bash
+# Check what's using port 50002
+sudo netstat -tulpn | grep 50002
+# or
+sudo lsof -i :50002
+
+# Kill competing process
+kill -9 <PID>
+
+# Check firewall
+sudo ufw status
+sudo ufw allow 50002/udp
+```
+
+#### No Status Messages Received
+**Causes:**
+- Sonar powered off
+- Network cable disconnected
+- Wrong subnet (PC and sonar not on same network)
+- Sonar in bootloader mode (firmware update)
+
+**Verify:**
+```bash
+# Check network interface is up
+ip addr show
+
+# Ping sonar (may not respond, but checks connectivity)
+ping 192.168.0.201
+
+# Use tcpdump to see UDP traffic
+sudo tcpdump -i eth0 port 50002
+```
+
+#### Network Interface Selection
+If PC has multiple network interfaces, SDK binds to **all interfaces** (`INADDR_ANY`). To force specific interface:
+
+```bash
+# Use routing table to prioritize sonar subnet
+sudo ip route add 192.168.0.0/24 dev eth0
+```
+
+Or configure PC network interface to match sonar subnet:
+```bash
+sudo ip addr add 192.168.0.100/24 dev eth0
+sudo ip link set eth0 up
+```
+
+### Bandwidth Considerations
+
+Gemini sonar generates significant network traffic:
+
+| Configuration | Data Rate | Notes |
+|---------------|-----------|-------|
+| 256 beams, 10 Hz | ~15 MB/s | Standard operation |
+| 512 beams, 10 Hz | ~30 MB/s | High resolution |
+| 512 beams, 20 Hz | ~60 MB/s | Maximum performance |
+
+**Network Requirements:**
+- **Minimum:** 100 Mbps Ethernet (100BASE-T)
+- **Recommended:** 1 Gbps Ethernet (1000BASE-T)
+- Use **Cat5e or better** cables
+- Avoid WiFi (latency and bandwidth issues)
+
+### Network Performance Tuning
+
+For high-performance applications:
+
+```bash
+# Increase UDP receive buffer size
+sudo sysctl -w net.core.rmem_max=26214400
+sudo sysctl -w net.core.rmem_default=26214400
+
+# Check for packet drops
+netstat -su | grep "packet receive errors"
+```
+
+In code, consider processing data in separate thread to avoid blocking SDK receiver:
+```cpp
+void processGeminiData(int type, int length, char* data) {
+    // Quick copy to queue, process in worker thread
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+    data_queue_.push(DataPacket{type, length, std::vector<char>(data, data+length)});
+    cv_.notify_one();
+}
+```
+
 ## SDK Architecture
 
 The Gemini SDK provides two levels of API:

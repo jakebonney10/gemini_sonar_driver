@@ -397,14 +397,45 @@ bool GeminiSonarNode::configureSonar()
         return false;
     }
     
-    RCLCPP_INFO(this->get_logger(), "Configuring sonar parameters:");
+    RCLCPP_INFO(this->get_logger(), "Configuring MK2 Gemini 1200ik sonar parameters:");
     RCLCPP_INFO(this->get_logger(), "  Range: %.1f m", parameters_.range_m);
     RCLCPP_INFO(this->get_logger(), "  Gain: %.1f %%", parameters_.gain_percent);
     RCLCPP_INFO(this->get_logger(), "  Sound Speed: %d m/s", parameters_.sound_speed_ms);
     RCLCPP_INFO(this->get_logger(), "  Frequency: %.1f kHz", parameters_.frequency_khz);
     RCLCPP_INFO(this->get_logger(), "  Number of Beams: %d", parameters_.num_beams);
     
-    // Configure ping using AutoPingConfig (sets range, gain, and speed of sound)
+    // MK2 Configuration (for Gemini 1200ik)
+    
+    // 1. Set head type for 1200ik
+    GEMX_SetHeadType(parameters_.sonar_id, GEM_HEADTYPE_MK2_1200IK);
+    
+    // 2. Set optimal transmit pulse length for the specified range
+    unsigned short tx_length = GEMX_AutoTXLength(parameters_.sonar_id, static_cast<float>(parameters_.range_m));
+    RCLCPP_INFO(this->get_logger(), "  TX Pulse Length: %d cycles", tx_length);
+    
+    // 3. Set number of beams (256 or 512 for 1200ik)
+    GEMX_SetGeminiBeams(parameters_.sonar_id, static_cast<unsigned short>(parameters_.num_beams));
+    
+    // 4. Configure gain and speed of sound via velocimeter mode
+    // For MK2, the actual gain/SOS values are set in the ping config structure
+    // that gets populated and sent by GEMX_SendGeminiPingConfig()
+    // gainMode: 1 = Manual gain
+    // outputMode: 1 = Use manually specified SOS
+    GEMX_SetVelocimeterMode(parameters_.sonar_id, 1, 1);
+    
+    // NOTE: For MK2 sonars, gain and SOS are embedded in the ping configuration
+    // message sent by GEMX_SendGeminiPingConfig(). The SDK uses the last values
+    // set via GEMX_AutoPingConfig() or internal defaults.
+    // 
+    // Since we can't set them directly with low-level GEMX API for MK2,
+    // we have three options:
+    // A) Use the values from a previous GEMX_AutoPingConfig() call (MK1 function)
+    // B) Use Sequencer API (SequencerApi::Svs5SetConfiguration)
+    // C) Accept SDK defaults and adjust via sonar's web interface
+    //
+    // For now, we'll use option A - call the MK1 function which still works
+    // for setting gain/SOS on MK2 hardware (undocumented compatibility)
+    
     GEMX_AutoPingConfig(
         parameters_.sonar_id,
         static_cast<float>(parameters_.range_m),
@@ -412,13 +443,18 @@ bool GeminiSonarNode::configureSonar()
         static_cast<float>(parameters_.sound_speed_ms)
     );
     
-    // Set number of beams (256 or 512 typically)
-    GEMX_SetGeminiBeams(parameters_.sonar_id, static_cast<unsigned short>(parameters_.num_beams));
+    // 5. Enable high range resolution (improves imagery at lower ranges)
+    // For 1200kHz: reduces range lines from 4mm to 2.4mm resolution
+    GEMX_AutoHighRangeResolution(parameters_.sonar_id, true);
     
-    // Send the ping configuration to the sonar
+    // 6. Configure chirp mode (auto enables/disables based on range)
+    GEMX_ConfigureChirpMode(parameters_.sonar_id, CHIRP_AUTO);
+    
+    // 7. Send the complete ping configuration to the sonar
+    // This sends all accumulated configuration including gain/SOS
     GEMX_SendGeminiPingConfig(parameters_.sonar_id);
     
-    RCLCPP_INFO(this->get_logger(), "Sonar configuration sent successfully");
+    RCLCPP_INFO(this->get_logger(), "MK2 sonar configuration sent successfully");
     return true;
 }
 
