@@ -1,6 +1,5 @@
 #include "gemini_sonar_node.hpp"
 #include <rclcpp/time.hpp>
-#include <filesystem>
 
 NS_HEAD
 
@@ -30,13 +29,10 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     node->declare_parameter("bins_per_beam", bins_per_beam);
     node->declare_parameter("beam_spacing_deg", beam_spacing_deg);
     
-    // Logging parameters
-    node->declare_parameter("enable_native_logging", enable_native_logging);
-    node->declare_parameter("native_log_directory", native_log_directory);
-    
     // Topic configuration
     node->declare_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
     node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
+    node->declare_parameter("topics.sonar_detections", topics.sonar_detections);
     node->declare_parameter("topics.raw_packet", topics.raw_packet);
 }
 
@@ -54,11 +50,9 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("bins_per_beam", bins_per_beam);
     node->get_parameter("beam_spacing_deg", beam_spacing_deg);
     
-    node->get_parameter("enable_native_logging", enable_native_logging);
-    node->get_parameter("native_log_directory", native_log_directory);
-    
     node->get_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
     node->get_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
+    node->get_parameter("topics.sonar_detections", topics.sonar_detections);
     node->get_parameter("topics.raw_packet", topics.raw_packet);
 }
 
@@ -114,6 +108,15 @@ GeminiSonarNode::GeminiSonarNode()
     parameters_.declare(this);
     parameters_.update(this);
     
+    // Initialize conversion parameters from node parameters
+    conversion_params_.frequency_khz = parameters_.frequency_khz;
+    conversion_params_.sound_speed_ms = parameters_.sound_speed_ms;
+    conversion_params_.range_m = parameters_.range_m;
+    conversion_params_.num_beams = parameters_.num_beams;
+    conversion_params_.bins_per_beam = parameters_.bins_per_beam;
+    conversion_params_.beam_spacing_deg = parameters_.beam_spacing_deg;
+    conversion_params_.frame_id = "gemini";
+    
     // Initialize publishers and services
     publishers_.init(this);
     services_.init(this);
@@ -150,7 +153,6 @@ GeminiSonarNode::~GeminiSonarNode()
         stopPinging();
     }
     
-    closeNativeLog();
     shutdownGeminiSDK();
     
     instance_ = nullptr;
@@ -172,22 +174,6 @@ void GeminiSonarNode::handleStartSonar(
         response->message = "Sonar is already running";
         RCLCPP_WARN(this->get_logger(), "%s", response->message.c_str());
         return;
-    }
-    
-    // Open native log if requested
-    if (request->enable_logging)
-    {
-        std::string log_dir = request->log_directory.empty() ? 
-                             parameters_.native_log_directory : request->log_directory;
-        
-        if (openNativeLog(log_dir))
-        {
-            RCLCPP_INFO(this->get_logger(), "Native logging enabled to: %s", log_dir.c_str());
-        }
-        else
-        {
-            RCLCPP_WARN(this->get_logger(), "Failed to open native log file");
-        }
     }
     
     // Start pinging
@@ -221,8 +207,6 @@ void GeminiSonarNode::handleStopSonar(
     
     if (stopPinging())
     {
-        closeNativeLog();
-        
         response->success = true;
         response->message = "Sonar stopped successfully";
         RCLCPP_INFO(this->get_logger(), "%s", response->message.c_str());
@@ -249,12 +233,6 @@ void GeminiSonarNode::geminiDataCallback(int messageType, int length, char* data
 
 void GeminiSonarNode::processGeminiData(int messageType, int length, char* dataBlock)
 {
-    // Log to native format if enabled
-    if (native_logging_enabled_)
-    {
-        writeToNativeLog(dataBlock, length, messageType);
-    }
-    
     // Publish raw packet
     auto raw_msg = std::make_shared<gemini_sonar_driver_interfaces::msg::RawPacket>();
     raw_msg->header.stamp = this->now();
@@ -292,24 +270,49 @@ void GeminiSonarNode::processPingHead(const char* data, int length)
     current_ping_beams_.clear();
     ping_complete_ = false;
     
-    // TODO: Parse ping head structure from Gemini SDK
-    // This will extract ping number, timestamp, range, etc.
+    // Parse ping head structure from Gemini SDK
+    const CGemPingHead* ping_head = reinterpret_cast<const CGemPingHead*>(data);
     
-    RCLCPP_DEBUG(this->get_logger(), "Received ping head");
+    // Extract ping metadata
+    ping_number_ = ping_head->m_pingID;
+    
+    // Calculate actual range from start/end range fields
+    // These are typically in units of sound speed bins
+    range_m_ = (ping_head->m_endRange - ping_head->m_startRange) * 
+               (ping_head->m_sosUsed / 2000.0);  // Convert to meters
+    
+    // Extract timestamp (64-bit timestamp from two 32-bit fields)
+    uint64_t timestamp_us = (static_cast<uint64_t>(ping_head->m_transmitTimestampH) << 32) | 
+                            ping_head->m_transmitTimestampL;
+    ping_time_ = timestamp_us / 1000000.0;  // Convert to seconds
+    
+    RCLCPP_DEBUG(this->get_logger(), 
+                 "Ping head: ID=%d, Range=%.1fm, Beams=%d, SOS=%d m/s",
+                 ping_number_, range_m_, ping_head->m_numBeams, ping_head->m_sosUsed);
 }
 
 void GeminiSonarNode::processPingLine(const char* data, int length)
 {
     std::lock_guard<std::mutex> lock(data_mutex_);
     
-    // TODO: Parse ping line structure from Gemini SDK
+    // Parse ping line structure from Gemini SDK
     // Each line represents one beam's intensity data
+    const CGemPingLine* ping_line = reinterpret_cast<const CGemPingLine*>(data);
     
-    // Store beam data
-    std::vector<uint8_t> beam_data(data, data + length);
+    // Get the actual data width (number of samples in this beam)
+    int line_width = ping_line->GetLineWidth();
+    
+    // Extract the beam data (starts after the CGemPingLine header)
+    const uint8_t* beam_data_ptr = reinterpret_cast<const uint8_t*>(&ping_line->m_startOfData);
+    
+    // Store beam data as vector
+    std::vector<uint8_t> beam_data(beam_data_ptr, beam_data_ptr + line_width);
     current_ping_beams_.push_back(beam_data);
     
-    RCLCPP_DEBUG(this->get_logger(), "Received beam %zu", current_ping_beams_.size());
+    RCLCPP_DEBUG(this->get_logger(), 
+                 "Received beam %zu: line_id=%d, width=%d samples, gain=%d, scale=%d",
+                 current_ping_beams_.size(), ping_line->m_lineID, 
+                 line_width, ping_line->m_gain, ping_line->m_scale);
 }
 
 void GeminiSonarNode::processPingTail(const char* data, int length)
@@ -321,15 +324,25 @@ void GeminiSonarNode::processPingTail(const char* data, int length)
     
     RCLCPP_DEBUG(this->get_logger(), "Received ping tail - ping complete");
     
+    // Check if we have beam data to publish
+    if (current_ping_beams_.empty())
+    {
+        RCLCPP_WARN(this->get_logger(), "Ping complete but no beam data available");
+        return;
+    }
+    
+    // Use conversions module to create messages
+    rclcpp::Time timestamp = this->now();
+    
     // Publish complete ping as RawSonarImage
-    auto raw_msg = createRawSonarImageMsg();
+    auto raw_msg = conversions::createRawSonarImage(current_ping_beams_, conversion_params_, timestamp);
     if (raw_msg)
     {
         publishers_.raw_sonar_image_->publish(*raw_msg);
     }
     
     // Publish SonarDetections (best for FLS data analysis)
-    auto detections_msg = createSonarDetectionsMsg();
+    auto detections_msg = conversions::createSonarDetections(current_ping_beams_, conversion_params_, timestamp);
     if (detections_msg)
     {
         publishers_.sonar_detections_->publish(*detections_msg);
@@ -338,7 +351,7 @@ void GeminiSonarNode::processPingTail(const char* data, int length)
     // Publish projected sonar image periodically (every 10 pings)
     if (ping_number_ % 10 == 0)
     {
-        auto proj_msg = createProjectedSonarImageMsg();
+        auto proj_msg = conversions::createProjectedSonarImage(current_ping_beams_, conversion_params_, timestamp);
         if (proj_msg)
         {
             publishers_.projected_sonar_image_->publish(*proj_msg);
@@ -389,11 +402,23 @@ bool GeminiSonarNode::configureSonar()
     RCLCPP_INFO(this->get_logger(), "  Gain: %.1f %%", parameters_.gain_percent);
     RCLCPP_INFO(this->get_logger(), "  Sound Speed: %d m/s", parameters_.sound_speed_ms);
     RCLCPP_INFO(this->get_logger(), "  Frequency: %.1f kHz", parameters_.frequency_khz);
+    RCLCPP_INFO(this->get_logger(), "  Number of Beams: %d", parameters_.num_beams);
     
-    // TODO: Call Gemini SDK configuration functions
-    // GEM_SetRange(), GEM_SetGain(), etc.
-    // These functions are defined in GeminiCommsPublic.h
+    // Configure ping using AutoPingConfig (sets range, gain, and speed of sound)
+    GEMX_AutoPingConfig(
+        parameters_.sonar_id,
+        static_cast<float>(parameters_.range_m),
+        static_cast<unsigned short>(parameters_.gain_percent),
+        static_cast<float>(parameters_.sound_speed_ms)
+    );
     
+    // Set number of beams (256 or 512 typically)
+    GEMX_SetGeminiBeams(parameters_.sonar_id, static_cast<unsigned short>(parameters_.num_beams));
+    
+    // Send the ping configuration to the sonar
+    GEMX_SendGeminiPingConfig(parameters_.sonar_id);
+    
+    RCLCPP_INFO(this->get_logger(), "Sonar configuration sent successfully");
     return true;
 }
 
@@ -407,10 +432,20 @@ bool GeminiSonarNode::startPinging()
     
     RCLCPP_INFO(this->get_logger(), "Starting sonar pinging...");
     
-    // TODO: Call Gemini SDK function to start pinging
-    // GEM_StartPinging() or similar
+    // Set ping mode to continuous pinging (mode 1)
+    // Mode 0: Single ping on receipt of config
+    // Mode 1: Continuous pinging at inter-ping period interval
+    GEMX_SetPingMode(parameters_.sonar_id, 1);
+    
+    // Set inter-ping period (default to 100ms = 100000 microseconds)
+    // This controls how fast the sonar pings
+    GEMX_SetInterPingPeriod(parameters_.sonar_id, 100000);
+    
+    // Send ping configuration to actually start pinging
+    GEMX_SendGeminiPingConfig(parameters_.sonar_id);
     
     sonar_running_ = true;
+    RCLCPP_INFO(this->get_logger(), "Sonar pinging started");
     return true;
 }
 
@@ -418,10 +453,11 @@ bool GeminiSonarNode::stopPinging()
 {
     RCLCPP_INFO(this->get_logger(), "Stopping sonar pinging...");
     
-    // TODO: Call Gemini SDK function to stop pinging
-    // GEM_StopPinging() or similar
+    // Set ping mode to single ping (mode 0) to stop continuous pinging
+    GEMX_SetPingMode(parameters_.sonar_id, 0);
     
     sonar_running_ = false;
+    RCLCPP_INFO(this->get_logger(), "Sonar pinging stopped");
     return true;
 }
 
@@ -431,261 +467,13 @@ void GeminiSonarNode::shutdownGeminiSDK()
     {
         RCLCPP_INFO(this->get_logger(), "Shutting down Gemini SDK");
         
-        // TODO: Call Gemini SDK shutdown function
-        // GEM_ShutdownNetwork() or similar
+        // Stop the Gemini network interface
+        GEM_StopGeminiNetwork();
         
         sdk_initialized_ = false;
+        RCLCPP_INFO(this->get_logger(), "Gemini SDK shutdown complete");
     }
-}
-
-//=============================================================================
-// Native Logging
-//=============================================================================
-
-bool GeminiSonarNode::openNativeLog(const std::string& directory)
-{
-    std::lock_guard<std::mutex> lock(log_mutex_);
-    
-    // Create directory if it doesn't exist
-    std::filesystem::path log_path(directory.empty() ? "." : directory);
-    
-    if (!std::filesystem::exists(log_path))
-    {
-        std::filesystem::create_directories(log_path);
-    }
-    
-    // Generate filename with timestamp
-    auto now = std::chrono::system_clock::now();
-    auto time_t_now = std::chrono::system_clock::to_time_t(now);
-    std::stringstream ss;
-    ss << log_path.string() << "/gemini_" 
-       << std::put_time(std::localtime(&time_t_now), "%Y%m%d_%H%M%S")
-       << ".gemini";
-    
-    std::string filename = ss.str();
-    
-    native_log_file_.open(filename, std::ios::binary | std::ios::out);
-    
-    if (native_log_file_.is_open())
-    {
-        native_logging_enabled_ = true;
-        RCLCPP_INFO(this->get_logger(), "Opened native log: %s", filename.c_str());
-        return true;
-    }
-    
-    RCLCPP_ERROR(this->get_logger(), "Failed to open native log: %s", filename.c_str());
-    return false;
-}
-
-void GeminiSonarNode::closeNativeLog()
-{
-    std::lock_guard<std::mutex> lock(log_mutex_);
-    
-    if (native_log_file_.is_open())
-    {
-        native_log_file_.close();
-        native_logging_enabled_ = false;
-        RCLCPP_INFO(this->get_logger(), "Closed native log file");
-    }
-}
-
-void GeminiSonarNode::writeToNativeLog(const char* data, int length, int messageType)
-{
-    std::lock_guard<std::mutex> lock(log_mutex_);
-    
-    if (native_log_file_.is_open())
-    {
-        // Write message type
-        native_log_file_.write(reinterpret_cast<const char*>(&messageType), sizeof(int));
-        
-        // Write length
-        native_log_file_.write(reinterpret_cast<const char*>(&length), sizeof(int));
-        
-        // Write data
-        native_log_file_.write(data, length);
-        
-        native_log_file_.flush();
-    }
-}
-
-//=============================================================================
-// Message Conversion
-//=============================================================================
-
-marine_acoustic_msgs::msg::RawSonarImage::SharedPtr GeminiSonarNode::createRawSonarImageMsg()
-{
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    
-    if (!ping_complete_ || current_ping_beams_.empty())
-    {
-        return nullptr;
-    }
-    
-    auto msg = std::make_shared<marine_acoustic_msgs::msg::RawSonarImage>();
-    
-    msg->header.stamp = this->now();
-    msg->header.frame_id = "gemini";
-    
-    // Fill ping info
-    msg->ping_info.frequency = parameters_.frequency_khz * 1000.0;  // Convert to Hz
-    msg->ping_info.sound_speed = parameters_.sound_speed_ms;
-    
-    msg->sample_rate = 0.0;  // TODO: Get from SDK
-    msg->samples_per_beam = parameters_.bins_per_beam;
-    msg->sample0 = 0;
-    
-    // Set beam angles
-    msg->tx_angles.resize(current_ping_beams_.size());
-    msg->rx_angles.resize(current_ping_beams_.size());
-    msg->tx_delays.resize(current_ping_beams_.size(), 0.0f);
-    
-    for (size_t i = 0; i < current_ping_beams_.size(); ++i)
-    {
-        double angle_deg = (static_cast<double>(i) - current_ping_beams_.size() / 2.0) * 
-                          parameters_.beam_spacing_deg;
-        msg->rx_angles[i] = angle_deg * M_PI / 180.0;  // Convert to radians
-        msg->tx_angles[i] = 0.0;  // Gemini is receive-only multibeam
-    }
-    
-    // Fill image data
-    msg->image.dtype = marine_acoustic_msgs::msg::SonarImageData::DTYPE_UINT8;
-    msg->image.beam_count = current_ping_beams_.size();
-    msg->image.is_bigendian = false;
-    
-    // Flatten beam data into single vector
-    msg->image.data.clear();
-    for (const auto& beam : current_ping_beams_)
-    {
-        msg->image.data.insert(msg->image.data.end(), beam.begin(), beam.end());
-    }
-    
-    return msg;
-}
-
-marine_acoustic_msgs::msg::ProjectedSonarImage::SharedPtr GeminiSonarNode::createProjectedSonarImageMsg()
-{
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    
-    if (!ping_complete_ || current_ping_beams_.empty())
-    {
-        return nullptr;
-    }
-    
-    auto msg = std::make_shared<marine_acoustic_msgs::msg::ProjectedSonarImage>();
-    
-    msg->header.stamp = this->now();
-    msg->header.frame_id = "gemini";
-    
-    // Fill ping info
-    msg->ping_info.frequency = parameters_.frequency_khz * 1000.0;  // Convert to Hz
-    msg->ping_info.sound_speed = parameters_.sound_speed_ms;
-    
-    // Set beam directions as 3D vectors
-    msg->beam_directions.resize(current_ping_beams_.size());
-    for (size_t i = 0; i < current_ping_beams_.size(); ++i)
-    {
-        double angle_deg = (static_cast<double>(i) - current_ping_beams_.size() / 2.0) * 
-                          parameters_.beam_spacing_deg;
-        double angle_rad = angle_deg * M_PI / 180.0;
-        
-        // Beam direction as unit vector (assuming forward sonar looking in Z direction)
-        msg->beam_directions[i].x = 0.0;
-        msg->beam_directions[i].y = sin(angle_rad);
-        msg->beam_directions[i].z = cos(angle_rad);
-    }
-    
-    // Set range bins
-    msg->ranges.resize(parameters_.bins_per_beam);
-    for (int i = 0; i < parameters_.bins_per_beam; ++i)
-    {
-        msg->ranges[i] = (static_cast<float>(i) / parameters_.bins_per_beam) * parameters_.range_m;
-    }
-    
-    // Fill image data
-    msg->image.dtype = marine_acoustic_msgs::msg::SonarImageData::DTYPE_UINT8;
-    msg->image.beam_count = current_ping_beams_.size();
-    msg->image.is_bigendian = false;
-    
-    // Flatten beam data
-    msg->image.data.clear();
-    for (const auto& beam : current_ping_beams_)
-    {
-        msg->image.data.insert(msg->image.data.end(), beam.begin(), beam.end());
-    }
-    
-    return msg;
-}
-
-marine_acoustic_msgs::msg::SonarDetections::SharedPtr GeminiSonarNode::createSonarDetectionsMsg()
-{
-    std::lock_guard<std::mutex> lock(data_mutex_);
-    
-    if (!ping_complete_ || current_ping_beams_.empty())
-    {
-        return nullptr;
-    }
-    
-    auto msg = std::make_shared<marine_acoustic_msgs::msg::SonarDetections>();
-    
-    msg->header.stamp = this->now();
-    msg->header.frame_id = "gemini";
-    
-    // Fill ping info
-    msg->ping_info.frequency = parameters_.frequency_khz * 1000.0;  // Convert to Hz
-    msg->ping_info.sound_speed = parameters_.sound_speed_ms;
-    
-    size_t num_beams = current_ping_beams_.size();
-    
-    // Initialize detection flags (all good by default)
-    msg->flags.resize(num_beams);
-    for (size_t i = 0; i < num_beams; ++i)
-    {
-        msg->flags[i].flag = marine_acoustic_msgs::msg::DetectionFlag::DETECT_OK;
-        // TODO: Add actual beam quality checking from SDK data
-    }
-    
-    // Set two-way travel times for each beam
-    msg->two_way_travel_times.resize(num_beams);
-    for (size_t i = 0; i < num_beams; ++i)
-    {
-        // TODO: Get actual detection range from SDK for each beam
-        // For now, use maximum range as placeholder
-        float detection_range = parameters_.range_m;  // This should be the actual detected range
-        msg->two_way_travel_times[i] = (2.0f * detection_range) / parameters_.sound_speed_ms;
-    }
-    
-    // TX delays (zero for single-sector sonar)
-    msg->tx_delays.resize(num_beams, 0.0f);
-    
-    // Intensities (beam amplitudes/strengths)
-    msg->intensities.resize(num_beams);
-    for (size_t i = 0; i < num_beams; ++i)
-    {
-        // TODO: Extract actual intensity from beam data
-        // For now, use max value in beam as intensity
-        if (!current_ping_beams_[i].empty())
-        {
-            msg->intensities[i] = static_cast<float>(*std::max_element(
-                current_ping_beams_[i].begin(), current_ping_beams_[i].end()));
-        }
-        else
-        {
-            msg->intensities[i] = 0.0f;
-        }
-    }
-    
-    // Set beam angles
-    msg->tx_angles.resize(num_beams, 0.0f);  // Along-track (forward/aft) - zero for FLS
-    msg->rx_angles.resize(num_beams);
-    
-    for (size_t i = 0; i < num_beams; ++i)
-    {
-        // Across-track angles (port/starboard)
-        double angle_deg = (static_cast<double>(i) - num_beams / 2.0) * parameters_.beam_spacing_deg;
-        msg->rx_angles[i] = static_cast<float>(angle_deg * M_PI / 180.0);
-    }
-    
-    return msg;
 }
 
 NS_FOOT
+

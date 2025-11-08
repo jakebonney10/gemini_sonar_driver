@@ -96,21 +96,8 @@ ros2 bag record /gemini/sonar_image /gemini/projection
 
 | Service | Type | Description |
 |---------|------|-------------|
-| `/gemini/start_sonar` | `StartSonar` | Start sonar pinging with optional native logging |
+| `/gemini/start_sonar` | `StartSonar` | Start sonar pinging |
 | `/gemini/stop_sonar` | `StopSonar` | Stop sonar pinging |
-
-## Native Data Format
-
-When `enable_native_logging` is true, the driver writes Gemini native format files alongside ROS2 bags. These files can be replayed later or processed with Tritech's tools.
-
-### Native Log Format
-
-Each native log file contains:
-- Message type (4 bytes)
-- Message length (4 bytes)
-- Message data (variable length)
-
-This allows full reconstruction of Gemini SDK data streams.
 
 ## Parameters
 
@@ -125,8 +112,6 @@ This allows full reconstruction of Gemini SDK data streams.
 | `num_beams` | int | 512 | Number of beams |
 | `bins_per_beam` | int | 1500 | Range cells per beam |
 | `beam_spacing_deg` | double | 0.25 | Beam spacing in degrees |
-| `enable_native_logging` | bool | true | Enable native format logging |
-| `native_log_directory` | string | "" | Directory for native logs |
 
 ## Troubleshooting
 
@@ -139,10 +124,6 @@ This allows full reconstruction of Gemini SDK data streams.
 - Ensure sonar is started via service call
 - Check sonar cable connections
 - Verify network configuration
-
-### Native log files not created
-- Check `native_log_directory` path permissions
-- Verify `enable_logging: true` in service call
 
 ## TODO / Future Features
 

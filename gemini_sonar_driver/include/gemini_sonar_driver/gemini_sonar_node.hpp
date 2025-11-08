@@ -2,6 +2,7 @@
 
 // Local package includes
 #include "package_defs.hpp"
+#include "gemini_sonar_driver/conversions.hpp"
 
 // ROS2 includes
 #include <rclcpp/rclcpp.hpp>
@@ -70,10 +71,6 @@ public:
         int num_beams = 512;                              ///< Number of beams
         int bins_per_beam = 1500;                         ///< Bins per beam (range cells)
         double beam_spacing_deg = 0.25;                   ///< Beam spacing in degrees
-        
-        // Logging parameters
-        bool enable_native_logging = true;                ///< Enable Gemini native format logging
-        std::string native_log_directory = "";            ///< Directory for native logs
         
         // Topic configuration
         struct Topics
@@ -179,40 +176,13 @@ protected:
      */
     void shutdownGeminiSDK();
 
-    /**
-     * @brief Open native format log file
-     */
-    bool openNativeLog(const std::string& directory);
-
-    /**
-     * @brief Close native format log file
-     */
-    void closeNativeLog();
-
-    /**
-     * @brief Write data to native format log
-     */
-    void writeToNativeLog(const char* data, int length, int messageType);
-
-    /**
-     * @brief Convert Gemini data to marine_acoustic_msgs/RawSonarImage
-     */
-    marine_acoustic_msgs::msg::RawSonarImage::SharedPtr createRawSonarImageMsg();
-
-    /**
-     * @brief Convert Gemini data to marine_acoustic_msgs/ProjectedSonarImage
-     */
-    marine_acoustic_msgs::msg::ProjectedSonarImage::SharedPtr createProjectedSonarImageMsg();
-
-    /**
-     * @brief Convert Gemini data to marine_acoustic_msgs/SonarDetections
-     */
-    marine_acoustic_msgs::msg::SonarDetections::SharedPtr createSonarDetectionsMsg();
-
     // Member variables
     Parameters parameters_;
     Publishers publishers_;
     Services services_;
+
+    // Conversion parameters for message creation
+    conversions::ConversionParameters conversion_params_;
 
     // SDK state
     std::atomic<bool> sonar_running_{false};
@@ -227,11 +197,6 @@ protected:
     uint32_t ping_number_{0};
     double ping_time_{0.0};
     double range_m_{0.0};
-    
-    // Native logging
-    std::ofstream native_log_file_;
-    std::mutex log_mutex_;
-    bool native_logging_enabled_{false};
 
     // Static instance pointer for SDK callback
     static GeminiSonarNode* instance_;

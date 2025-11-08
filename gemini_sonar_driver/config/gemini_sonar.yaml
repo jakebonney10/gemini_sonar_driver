@@ -15,10 +15,6 @@
     bins_per_beam: 1500    # Range cells per beam
     beam_spacing_deg: 0.25 # Beam spacing in degrees
     
-    # Logging Configuration
-    enable_native_logging: true
-    native_log_directory: "~/gemini_logs"  # Directory for native format logs
-    
     # Topic Names
     topics:
       raw_sonar_image: "gemini/raw_sonar_image"
