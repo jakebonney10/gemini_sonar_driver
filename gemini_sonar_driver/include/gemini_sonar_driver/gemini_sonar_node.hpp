@@ -74,6 +74,9 @@ public:
         int bins_per_beam = 1500;                         ///< Bins per beam (range cells)
         double beam_spacing_deg = 0.25;                   ///< Beam spacing in degrees
         
+        // Frame configuration
+        std::string frame_id = "gemini_fls";              ///< TF frame ID for sonar data
+        
         // Topic configuration
         struct Topics
         {

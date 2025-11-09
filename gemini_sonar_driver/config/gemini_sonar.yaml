@@ -4,16 +4,19 @@
     sonar_id: 1
     software_mode: "Evo"  # Options: Evo, EvoC, SeaNet, SeaNetC
     
-    # Sonar Operation Parameters
-    range_m: 75.0          # Range in meters (max ~300m for 720kHz)
+    # Sonar Operation 
+    range_m: 10.0          # Range in meters (0.1-120m for 720kHz, 0.1-50m for 1200kHz)
     gain_percent: 50.0     # Receiver gain 0-100%
     sound_speed_ms: 1500   # Sound speed in m/s
-    frequency_khz: 720.0   # Operating frequency (720, 1200 kHz typically)
+    frequency_khz: 1200.0  # Operating frequency (720, 1200 kHz typically)
     
-    # Image/Data Parameters
-    num_beams: 512         # Number of beams (typical: 256, 512)
+    # Image/Data 
+    num_beams: 1024        # Number of beams (typical: 512 LF, 1024 HF)
     bins_per_beam: 1500    # Range cells per beam
     beam_spacing_deg: 0.25 # Beam spacing in degrees
+    
+    # Frame ID
+    frame_id: "gemini_fls" # TF frame ID for sonar data (e.g., "forward_sonar", "port_sonar")
     
     # Topic Names
     topics:

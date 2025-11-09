@@ -29,6 +29,9 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     node->declare_parameter("bins_per_beam", bins_per_beam);
     node->declare_parameter("beam_spacing_deg", beam_spacing_deg);
     
+    // Frame configuration
+    node->declare_parameter("frame_id", frame_id);
+    
     // Topic configuration
     node->declare_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
     node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
@@ -49,6 +52,8 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("num_beams", num_beams);
     node->get_parameter("bins_per_beam", bins_per_beam);
     node->get_parameter("beam_spacing_deg", beam_spacing_deg);
+    
+    node->get_parameter("frame_id", frame_id);
     
     node->get_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
     node->get_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
@@ -115,7 +120,7 @@ GeminiSonarNode::GeminiSonarNode()
     conversion_params_.num_beams = parameters_.num_beams;
     conversion_params_.bins_per_beam = parameters_.bins_per_beam;
     conversion_params_.beam_spacing_deg = parameters_.beam_spacing_deg;
-    conversion_params_.frame_id = "gemini";
+    conversion_params_.frame_id = parameters_.frame_id;
     
     // Initialize publishers and services
     publishers_.init(this);
@@ -228,7 +233,7 @@ void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int 
     // Publish raw packet
     auto raw_msg = std::make_shared<gemini_sonar_driver_interfaces::msg::RawPacket>();
     raw_msg->header.stamp = this->now();
-    raw_msg->header.frame_id = "gemini";
+    raw_msg->header.frame_id = parameters_.frame_id;
     raw_msg->message_type = messageType;
     raw_msg->data.assign(value, value + size);
     publishers_.raw_packet_->publish(*raw_msg);
@@ -238,7 +243,7 @@ void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int 
     {
         case SequencerApi::GEMINI_STATUS:
             RCLCPP_DEBUG(this->get_logger(), "Received GEMINI_STATUS message");
-            // Parse CGeminiStatusData structure for sonar health/status
+            // TODO: Parse CGeminiStatusData structure for sonar health/status, probably create custom gemini msg to report status
             break;
             
         case SequencerApi::GLF_LIVE_TARGET_IMAGE:
@@ -255,7 +260,7 @@ void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int 
             
         case SequencerApi::SENSOR_RECORD:
             RCLCPP_DEBUG(this->get_logger(), "Received SENSOR_RECORD");
-            // Parse sensor data (GPS, compass, etc.)
+            // TODO: Parse sensor data (GPS, compass, etc.) publish to appropriate topics
             break;
             
         case SequencerApi::FRAME_RATE:
@@ -323,6 +328,7 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     }
     
     // Update conversion parameters from GLF metadata
+    conversion_params_.frame_id = parameters_.frame_id;
     conversion_params_.num_beams = num_beams;
     conversion_params_.bins_per_beam = samples_per_beam;
     conversion_params_.frequency_khz = mainImage.m_uiModulationFrequency / 1000.0;
@@ -333,7 +339,7 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     conversion_params_.range_m = (range_bins * conversion_params_.sound_speed_ms) / 
                                   (2.0 * conversion_params_.frequency_khz * 1000.0);
     
-    // Use actual bearing table instead of calculated angles
+    // Use actual bearing table instead of calculated angles TODO: ? is this provided in the SDK?
     // (The bearing table provides the precise beam angles from the sonar)
     
     // Publish messages using the conversions module
@@ -477,6 +483,7 @@ bool GeminiSonarNode::configureSonar()
     }
     
     // 5. Enable high range resolution for 1200ik
+    // TODO: Make this a parameter? Currently always enabled for best quality
     bool highRes = true;
     result = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_HIGH_RESOLUTION,
@@ -488,7 +495,8 @@ bool GeminiSonarNode::configureSonar()
         RCLCPP_WARN(this->get_logger(), "Failed to set high resolution (non-critical)");
     }
     
-    // 6. Configure chirp mode (auto)
+    // 6. Configure chirp mode (auto) 
+    // TODO: Make this a parameter? Currently set to auto which is OK for now
     int chirpMode = 2;  // 0=disabled, 1=enabled, 2=auto
     result = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_CHIRP_MODE,
@@ -514,7 +522,7 @@ bool GeminiSonarNode::startPinging()
     
     RCLCPP_INFO(this->get_logger(), "Starting sonar streaming...");
     
-    // Configure ping mode (free-running or interval-based)
+    // Configure ping mode (free-running or interval-based) TODO: some parameterization here?
     SequencerApi::SequencerPingMode pingMode;
     pingMode.m_bFreeRun = false;      // Ping at fixed interval
     pingMode.m_msInterval = 100;      // 100ms between pings
