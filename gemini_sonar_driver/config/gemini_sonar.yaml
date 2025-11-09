@@ -18,6 +18,9 @@
     # Frame ID
     frame_id: "gemini_fls" # TF frame ID for sonar data (e.g., "forward_sonar", "port_sonar")
     
+    # Advanced Sonar Settings
+    chirp_mode: 2          # Chirp mode: 0=disabled, 1=enabled, 2=auto (recommended)
+    
     # Topic Names
     topics:
       raw_sonar_image: "gemini/raw_sonar_image"

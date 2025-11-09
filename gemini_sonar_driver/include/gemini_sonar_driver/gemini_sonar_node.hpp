@@ -77,6 +77,9 @@ public:
         // Frame configuration
         std::string frame_id = "gemini_fls";              ///< TF frame ID for sonar data
         
+        // Advanced sonar settings
+        int chirp_mode = 2;                               ///< Chirp mode: 0=disabled, 1=enabled, 2=auto
+        
         // Topic configuration
         struct Topics
         {

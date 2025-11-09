@@ -32,6 +32,9 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     // Frame configuration
     node->declare_parameter("frame_id", frame_id);
     
+    // Advanced sonar settings
+    node->declare_parameter("chirp_mode", chirp_mode);
+    
     // Topic configuration
     node->declare_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
     node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
@@ -54,6 +57,8 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("beam_spacing_deg", beam_spacing_deg);
     
     node->get_parameter("frame_id", frame_id);
+    
+    node->get_parameter("chirp_mode", chirp_mode);
     
     node->get_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
     node->get_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
@@ -495,9 +500,8 @@ bool GeminiSonarNode::configureSonar()
         RCLCPP_WARN(this->get_logger(), "Failed to set high resolution (non-critical)");
     }
     
-    // 6. Configure chirp mode (auto) 
-    // TODO: Make this a parameter? Currently set to auto which is OK for now
-    int chirpMode = 2;  // 0=disabled, 1=enabled, 2=auto
+    // 6. Configure chirp mode
+    int chirpMode = parameters_.chirp_mode;
     result = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_CHIRP_MODE,
         sizeof(int),
