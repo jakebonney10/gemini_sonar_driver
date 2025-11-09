@@ -80,6 +80,11 @@ public:
         // Advanced sonar settings
         int chirp_mode = 2;                               ///< Chirp mode: 0=disabled, 1=enabled, 2=auto
         
+        // Ping mode settings
+        bool ping_free_run = false;                       ///< Ping mode: true=continuous, false=interval-based
+        int ping_interval_ms = 100;                       ///< Ping interval in ms (0-999) when free_run=false
+        bool ping_ext_trigger = false;                    ///< External TTL trigger: true=hardware trigger, false=software
+        
         // Topic configuration
         struct Topics
         {

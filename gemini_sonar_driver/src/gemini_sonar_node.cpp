@@ -35,6 +35,11 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     // Advanced sonar settings
     node->declare_parameter("chirp_mode", chirp_mode);
     
+    // Ping mode settings
+    node->declare_parameter("ping_free_run", ping_free_run);
+    node->declare_parameter("ping_interval_ms", ping_interval_ms);
+    node->declare_parameter("ping_ext_trigger", ping_ext_trigger);
+    
     // Topic configuration
     node->declare_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
     node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
@@ -59,6 +64,10 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("frame_id", frame_id);
     
     node->get_parameter("chirp_mode", chirp_mode);
+    
+    node->get_parameter("ping_free_run", ping_free_run);
+    node->get_parameter("ping_interval_ms", ping_interval_ms);
+    node->get_parameter("ping_ext_trigger", ping_ext_trigger);
     
     node->get_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
     node->get_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
@@ -423,6 +432,7 @@ bool GeminiSonarNode::configureSonar()
     RCLCPP_INFO(this->get_logger(), "  Gain: %.1f %%", parameters_.gain_percent);
     RCLCPP_INFO(this->get_logger(), "  Sound Speed: %d m/s", parameters_.sound_speed_ms);
     RCLCPP_INFO(this->get_logger(), "  Number of Beams: %d", parameters_.num_beams);
+    RCLCPP_INFO(this->get_logger(), "  Chirp Mode: %d (0=disabled, 1=enabled, 2=auto)", parameters_.chirp_mode);
     
     Svs5ErrorCode result;
     
@@ -526,11 +536,21 @@ bool GeminiSonarNode::startPinging()
     
     RCLCPP_INFO(this->get_logger(), "Starting sonar streaming...");
     
-    // Configure ping mode (free-running or interval-based) TODO: some parameterization here?
+    // Configure ping mode from parameters
     SequencerApi::SequencerPingMode pingMode;
-    pingMode.m_bFreeRun = false;      // Ping at fixed interval
-    pingMode.m_msInterval = 100;      // 100ms between pings
-    pingMode.m_extTTLTrigger = false; // No external trigger
+    pingMode.m_bFreeRun = parameters_.ping_free_run;
+    pingMode.m_msInterval = static_cast<unsigned short>(parameters_.ping_interval_ms);
+    pingMode.m_extTTLTrigger = parameters_.ping_ext_trigger;
+    
+    RCLCPP_INFO(this->get_logger(), "  Ping Mode: %s", 
+                parameters_.ping_free_run ? "Free-running (continuous)" : "Interval-based");
+    if (!parameters_.ping_free_run) {
+        RCLCPP_INFO(this->get_logger(), "  Ping Interval: %d ms (%.1f Hz)", 
+                    parameters_.ping_interval_ms, 1000.0 / parameters_.ping_interval_ms);
+    }
+    if (parameters_.ping_ext_trigger) {
+        RCLCPP_INFO(this->get_logger(), "  External TTL Trigger: ENABLED");
+    }
     
     Svs5ErrorCode result = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_PING_MODE,

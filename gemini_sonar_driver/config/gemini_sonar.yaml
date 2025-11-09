@@ -21,6 +21,11 @@
     # Advanced Sonar Settings
     chirp_mode: 2          # Chirp mode: 0=disabled, 1=enabled, 2=auto (recommended)
     
+    # Ping Mode Settings
+    ping_free_run: false   # true=continuous (as fast as possible), false=interval-based
+    ping_interval_ms: 100  # Ping interval in ms (0-999) when ping_free_run=false. Manual states 5-65Hz (15-200ms) range dpdendnet.
+    ping_ext_trigger: false # true=external TTL hardware trigger, false=software controlled
+    
     # Topic Names
     topics:
       raw_sonar_image: "gemini/raw_sonar_image"
