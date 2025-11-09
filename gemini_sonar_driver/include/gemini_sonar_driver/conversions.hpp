@@ -41,10 +41,12 @@ struct ConversionParameters
     double range_m = 75.0;               ///< Maximum range in meters
     int num_beams = 512;                 ///< Number of beams
     int bins_per_beam = 1500;            ///< Range cells per beam
-    double beam_spacing_deg = 0.25;      ///< Beam spacing in degrees
     
     // Frame information
     std::string frame_id = "gemini";     ///< TF frame ID
+    
+    // Factory-calibrated beam angles from SDK (in degrees)
+    std::vector<double> bearing_table;   ///< Precise beam angles from sonar calibration
 };
 
 /**
@@ -131,21 +133,19 @@ float extractIntensity(
     const std::vector<uint8_t>& beam_samples);
 
 /**
- * @brief Calculate beam angle for a given beam index
+ * @brief Get beam angle from SDK bearing table
  * 
- * Calculates the across-track angle for a beam based on the beam index
- * and beam spacing. Center beam is at 0 degrees, positive to starboard,
- * negative to port.
+ * Returns the factory-calibrated beam angle from the SDK bearing table.
+ * The bearing table contains precise beam angles accounting for manufacturing
+ * tolerances and non-uniform beam spacing.
  * 
  * @param beam_index Index of the beam (0 to num_beams-1)
- * @param num_beams Total number of beams
- * @param beam_spacing_deg Spacing between beams in degrees
+ * @param params Conversion parameters containing bearing table
  * @return Beam angle in radians
  */
-float calculateBeamAngle(
+float getBeamAngle(
     size_t beam_index,
-    size_t num_beams,
-    double beam_spacing_deg);
+    const ConversionParameters& params);
 
 /**
  * @brief Create SonarImageData structure from beam data

@@ -13,7 +13,6 @@
     # Image/Data 
     num_beams: 1024        # Number of beams (typical: 512 LF, 1024 HF)
     bins_per_beam: 1500    # Range cells per beam
-    beam_spacing_deg: 0.25 # Beam spacing in degrees
     
     # Advanced Sonar 
     chirp_mode: 2          # Chirp mode: 0=disabled, 1=enabled, 2=auto (recommended)

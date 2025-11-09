@@ -65,7 +65,7 @@ marine_acoustic_msgs::msg::RawSonarImage::SharedPtr createRawSonarImage(
     msg->rx_angles.resize(num_beams);
     for (size_t i = 0; i < num_beams; ++i)
     {
-        msg->rx_angles[i] = calculateBeamAngle(i, num_beams, params.beam_spacing_deg);
+        msg->rx_angles[i] = getBeamAngle(i, params);
     }
     
     // Image data
@@ -99,7 +99,7 @@ marine_acoustic_msgs::msg::ProjectedSonarImage::SharedPtr createProjectedSonarIm
     msg->beam_directions.resize(num_beams);
     for (size_t i = 0; i < num_beams; ++i)
     {
-        float angle_rad = calculateBeamAngle(i, num_beams, params.beam_spacing_deg);
+        float angle_rad = getBeamAngle(i, params);
         
         // Beam direction as unit vector (assuming forward sonar looking in +Z direction)
         // X: forward (sonar look direction)
@@ -175,7 +175,7 @@ marine_acoustic_msgs::msg::SonarDetections::SharedPtr createSonarDetections(
     
     for (size_t i = 0; i < num_beams; ++i)
     {
-        msg->rx_angles[i] = calculateBeamAngle(i, num_beams, params.beam_spacing_deg);
+        msg->rx_angles[i] = getBeamAngle(i, params);
     }
     
     return msg;
@@ -209,14 +209,11 @@ float extractIntensity(const std::vector<uint8_t>& beam_samples)
     return static_cast<float>(*std::max_element(beam_samples.begin(), beam_samples.end()));
 }
 
-float calculateBeamAngle(size_t beam_index, size_t num_beams, double beam_spacing_deg)
+float getBeamAngle(size_t beam_index, const ConversionParameters& params)
 {
-    // Calculate angle with center beam at 0
-    // Positive angles to starboard, negative to port
-    double angle_deg = (static_cast<double>(beam_index) - num_beams / 2.0) * beam_spacing_deg;
-    
-    // Convert to radians
-    return static_cast<float>(angle_deg * M_PI / 180.0);
+    // Use factory-calibrated bearing table from SDK (in degrees)
+    // Convert to radians for ROS messages
+    return static_cast<float>(params.bearing_table[beam_index] * M_PI / 180.0);
 }
 
 marine_acoustic_msgs::msg::SonarImageData createSonarImageData(

@@ -27,7 +27,6 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     // Image/data 
     node->declare_parameter("num_beams", num_beams);
     node->declare_parameter("bins_per_beam", bins_per_beam);
-    node->declare_parameter("beam_spacing_deg", beam_spacing_deg);
     
     // Frame ID
     node->declare_parameter("frame_id", frame_id);
@@ -60,7 +59,6 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     
     node->get_parameter("num_beams", num_beams);
     node->get_parameter("bins_per_beam", bins_per_beam);
-    node->get_parameter("beam_spacing_deg", beam_spacing_deg);
     
     node->get_parameter("frame_id", frame_id);
     
@@ -135,7 +133,6 @@ GeminiSonarNode::GeminiSonarNode()
     conversion_params_.range_m = parameters_.range_m;
     conversion_params_.num_beams = parameters_.num_beams;
     conversion_params_.bins_per_beam = parameters_.bins_per_beam;
-    conversion_params_.beam_spacing_deg = parameters_.beam_spacing_deg;
     conversion_params_.frame_id = parameters_.frame_id;
     
     // Initialize publishers and services
@@ -362,8 +359,8 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     conversion_params_.range_m = (range_bins * conversion_params_.sound_speed_ms) / 
                                   (2.0 * conversion_params_.frequency_khz * 1000.0);
     
-    // Use actual bearing table instead of calculated angles TODO: ? is this provided in the SDK?
-    // (The bearing table provides the precise beam angles from the sonar)
+    // Populate bearing table from SDK (factory-calibrated beam angles in degrees)
+    conversion_params_.bearing_table.assign(bearingTable->begin(), bearingTable->end());
     
     // Publish messages using the conversions module
     auto raw_msg = conversions::createRawSonarImage(beam_data, conversion_params_, timestamp);
