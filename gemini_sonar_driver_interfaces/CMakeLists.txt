@@ -7,7 +7,9 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 
 set(MSG_FILES
-    "msg/RawPacket.msg")
+    "msg/RawPacket.msg"
+    "msg/GeminiBFStatus.msg"
+    "msg/GeminiDAStatus.msg")
 
 set(SRV_FILES
     "srv/StartSonar.srv"
