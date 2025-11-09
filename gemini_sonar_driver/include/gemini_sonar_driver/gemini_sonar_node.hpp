@@ -23,6 +23,8 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <chrono>
+#include <thread>
 
 // Define cdecl as empty on non-Windows platforms (it's the default calling convention on Linux)
 #ifndef _WIN32
@@ -31,9 +33,11 @@
 #endif
 #endif
 
-// Gemini SDK includes (order matters: structures must come before comms)
+// Gemini SDK Svs5Sequencer API (high-level interface)
+#include "types.h"  // UInt8, UInt16, UInt32 typedefs
+#include "Svs5Seq/Svs5SequencerApi.h"
 #include "Gemini/GeminiStructuresPublic.h"
-#include "Gemini/GeminiCommsPublic.h"
+#include "GenesisSerializer/GlfLoggerGeminiStructure.h"
 
 NS_HEAD
 
@@ -71,6 +75,18 @@ public:
         int num_beams = 512;                              ///< Number of beams
         int bins_per_beam = 1500;                         ///< Bins per beam (range cells)
         double beam_spacing_deg = 0.25;                   ///< Beam spacing in degrees
+        
+        // Frame configuration
+        std::string frame_id = "gemini_fls";              ///< TF frame ID for sonar data
+        
+        // Advanced sonar settings
+        int chirp_mode = 2;                               ///< Chirp mode: 0=disabled, 1=enabled, 2=auto
+        bool high_resolution = true;                      ///< High resolution mode (1200ik only): true=improved range resolution
+        
+        // Ping mode settings
+        bool ping_free_run = false;                       ///< Ping mode: true=continuous, false=interval-based
+        int ping_interval_ms = 100;                       ///< Ping interval in ms (0-999) when free_run=false
+        bool ping_ext_trigger = false;                    ///< External TTL trigger: true=hardware trigger, false=software
         
         // Topic configuration
         struct Topics
@@ -126,30 +142,20 @@ protected:
         std::shared_ptr<gemini_sonar_driver_interfaces::srv::StopSonar::Response> response);
 
     /**
-     * @brief Static callback function for Gemini SDK data
+     * @brief Static callback function for Svs5Sequencer API
      * This is called by the SDK when data is received
      */
-    static void geminiDataCallback(int messageType, int length, char* dataBlock);
+    static void svs5DataCallback(unsigned int messageType, unsigned int size, const char* const value);
 
     /**
-     * @brief Instance method to process Gemini data
+     * @brief Instance method to process Svs5 messages
      */
-    void processGeminiData(int messageType, int length, char* dataBlock);
+    void processSvs5Message(unsigned int messageType, unsigned int size, const char* const value);
 
     /**
-     * @brief Process ping head message
+     * @brief Process GLF sonar image data
      */
-    void processPingHead(const char* data, int length);
-
-    /**
-     * @brief Process ping line message (beam data)
-     */
-    void processPingLine(const char* data, int length);
-
-    /**
-     * @brief Process ping tail message
-     */
-    void processPingTail(const char* data, int length);
+    void processGLFImage(const GLF::GLogTargetImage& image);
 
     /**
      * @brief Initialize the Gemini SDK and configure sonar
@@ -176,6 +182,13 @@ protected:
      */
     void shutdownGeminiSDK();
 
+    /**
+     * @brief Wait for sonar to be detected on network
+     * @param timeout_seconds Maximum time to wait in seconds
+     * @return true if sonar detected, false if timeout
+     */
+    bool waitForSonarDetection(int timeout_seconds);
+
     // Member variables
     Parameters parameters_;
     Publishers publishers_;
@@ -187,6 +200,8 @@ protected:
     // SDK state
     std::atomic<bool> sonar_running_{false};
     std::atomic<bool> sdk_initialized_{false};
+    std::atomic<bool> sonar_detected_{false};        ///< True if we've received any messages from sonar
+    std::atomic<uint64_t> last_message_time_{0};     ///< Timestamp of last received message
     
     // Data buffers (protected by mutex)
     std::mutex data_mutex_;

@@ -67,11 +67,14 @@ file(GLOB NODES CONFIGURE_DEPENDS
 include_directories(
   include
   ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/Svs5Seq
+  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/Gemini
+  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/GenesisSerializer
 )
 
-# Link Gemini SDK library
+# Link Gemini SDK libraries (using bin/ directory for shared libraries)
 set(GEMINI_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64)
-link_directories(${GEMINI_SDK_DIR}/libs)
+link_directories(${GEMINI_SDK_DIR}/bin)
 
 ###########
 ## Build ##
@@ -89,8 +92,8 @@ foreach(NODE_FILE ${NODES})
   ament_target_dependencies(${NODE_NAME} ${ROS_DEPENDS} ${EXTERNAL_DEPENDS_LIB})
   target_include_directories(${NODE_NAME} PRIVATE "include/${PROJECT_NAME}/")
   
-  # Link Gemini SDK library
-  target_link_libraries(${NODE_NAME} GeminiComms)
+  # Link Gemini SDK libraries (Svs5SeqLib includes GeminiComms internally)
+  target_link_libraries(${NODE_NAME} Svs5SeqLib)
 endforeach(NODE_FILE)
 
 
