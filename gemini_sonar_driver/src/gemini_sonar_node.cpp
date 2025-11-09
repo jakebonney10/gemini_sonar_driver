@@ -246,6 +246,13 @@ void GeminiSonarNode::handleStopSonar(
 
 void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int size, const char* const value)
 {
+    // Mark that we've received a message from the sonar
+    if (!sonar_detected_) {
+        sonar_detected_ = true;
+        RCLCPP_INFO(this->get_logger(), "Sonar detected on network!");
+    }
+    last_message_time_ = this->now().nanoseconds();
+    
     // Publish raw packet
     auto raw_msg = std::make_shared<gemini_sonar_driver_interfaces::msg::RawPacket>();
     raw_msg->header.stamp = this->now();
@@ -264,11 +271,11 @@ void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int 
             
         case SequencerApi::GLF_LIVE_TARGET_IMAGE:
         {
-            // Cast the value pointer to GLF::GLogTargetImage structure
+            // This is the primary sonar imaging data - acoustic beam intensities
             GLF::GLogTargetImage* image = (GLF::GLogTargetImage*)value;
             if (image)
             {
-                RCLCPP_DEBUG(this->get_logger(), "Received GLF_LIVE_TARGET_IMAGE");
+                RCLCPP_DEBUG(this->get_logger(), "Received GLF_LIVE_TARGET_IMAGE (sonar data)");
                 processGLFImage(*image);
             }
             break;
@@ -284,7 +291,7 @@ void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int 
             break;
             
         default:
-            RCLCPP_DEBUG(this->get_logger(), "Received Svs5 message type: %u", messageType);
+            RCLCPP_DEBUG(this->get_logger(), "Received unhandled Svs5 message type: %u", messageType);
             break;
     }
 }
@@ -388,6 +395,19 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
 // SDK Initialization and Configuration
 //=============================================================================
 
+bool GeminiSonarNode::waitForSonarDetection(int timeout_seconds)
+{
+    auto start_time = std::chrono::steady_clock::now();
+    auto timeout = std::chrono::seconds(timeout_seconds);
+    
+    while (!sonar_detected_ && 
+           (std::chrono::steady_clock::now() - start_time) < timeout) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    return sonar_detected_;
+}
+
 bool GeminiSonarNode::initializeGeminiSDK()
 {
     RCLCPP_INFO(this->get_logger(), "Initializing Gemini SDK (Svs5Sequencer API)...");
@@ -416,6 +436,16 @@ bool GeminiSonarNode::initializeGeminiSDK()
     
     RCLCPP_INFO(this->get_logger(), "Svs5 library started successfully");
     RCLCPP_INFO(this->get_logger(), "Library version: %s", SequencerApi::GetLibraryVersionInfo());
+    
+    // Wait briefly for sonar discovery
+    RCLCPP_INFO(this->get_logger(), "Waiting for sonar discovery on network...");
+    
+    if (waitForSonarDetection(5)) {
+        RCLCPP_INFO(this->get_logger(), "Sonar found on network");
+    } else {
+        RCLCPP_WARN(this->get_logger(), "No sonar detected after 5 second wait");
+        RCLCPP_WARN(this->get_logger(), "Driver will continue, but commands may fail without hardware");
+    }
     
     sdk_initialized_ = true;
     return true;
@@ -537,6 +567,12 @@ bool GeminiSonarNode::startPinging()
         return false;
     }
     
+    if (!sonar_detected_)
+    {
+        RCLCPP_WARN(this->get_logger(), "No sonar detected on network - start command may fail");
+        RCLCPP_WARN(this->get_logger(), "Verify sonar is powered on and connected to network");
+    }
+    
     RCLCPP_INFO(this->get_logger(), "Starting sonar streaming...");
     
     // Configure ping mode from parameters
@@ -583,6 +619,18 @@ bool GeminiSonarNode::startPinging()
     
     sonar_running_ = true;
     RCLCPP_INFO(this->get_logger(), "Sonar streaming started");
+    
+    // Wait briefly to see if we get data
+    if (!sonar_detected_) {
+        RCLCPP_INFO(this->get_logger(), "Waiting for sonar response...");
+        
+        if (!waitForSonarDetection(3)) {
+            RCLCPP_ERROR(this->get_logger(), "No response from sonar after starting stream");
+            RCLCPP_ERROR(this->get_logger(), "Check that sonar is powered on and network connection is correct");
+            return false;
+        }
+    }
+    
     return true;
 }
 

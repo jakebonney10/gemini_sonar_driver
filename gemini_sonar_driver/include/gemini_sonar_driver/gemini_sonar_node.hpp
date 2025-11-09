@@ -23,6 +23,8 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <chrono>
+#include <thread>
 
 // Define cdecl as empty on non-Windows platforms (it's the default calling convention on Linux)
 #ifndef _WIN32
@@ -180,6 +182,13 @@ protected:
      */
     void shutdownGeminiSDK();
 
+    /**
+     * @brief Wait for sonar to be detected on network
+     * @param timeout_seconds Maximum time to wait in seconds
+     * @return true if sonar detected, false if timeout
+     */
+    bool waitForSonarDetection(int timeout_seconds);
+
     // Member variables
     Parameters parameters_;
     Publishers publishers_;
@@ -191,6 +200,8 @@ protected:
     // SDK state
     std::atomic<bool> sonar_running_{false};
     std::atomic<bool> sdk_initialized_{false};
+    std::atomic<bool> sonar_detected_{false};        ///< True if we've received any messages from sonar
+    std::atomic<uint64_t> last_message_time_{0};     ///< Timestamp of last received message
     
     // Data buffers (protected by mutex)
     std::mutex data_mutex_;
