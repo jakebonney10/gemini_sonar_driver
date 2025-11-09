@@ -14,33 +14,34 @@ GeminiSonarNode::Parameters::Parameters() {}
 
 void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
 {
-    // Network configuration
+    // Network config
     node->declare_parameter("sonar_id", sonar_id);
     node->declare_parameter("software_mode", software_mode);
     
-    // Sonar operation parameters
+    // Sonar operation 
     node->declare_parameter("range_m", range_m);
     node->declare_parameter("gain_percent", gain_percent);
     node->declare_parameter("sound_speed_ms", sound_speed_ms);
     node->declare_parameter("frequency_khz", frequency_khz);
     
-    // Image/data parameters
+    // Image/data 
     node->declare_parameter("num_beams", num_beams);
     node->declare_parameter("bins_per_beam", bins_per_beam);
     node->declare_parameter("beam_spacing_deg", beam_spacing_deg);
     
-    // Frame configuration
+    // Frame ID
     node->declare_parameter("frame_id", frame_id);
     
-    // Advanced sonar settings
+    // Advanced sonar 
     node->declare_parameter("chirp_mode", chirp_mode);
+    node->declare_parameter("high_resolution", high_resolution);
     
-    // Ping mode settings
+    // Ping mode 
     node->declare_parameter("ping_free_run", ping_free_run);
     node->declare_parameter("ping_interval_ms", ping_interval_ms);
     node->declare_parameter("ping_ext_trigger", ping_ext_trigger);
     
-    // Topic configuration
+    // Topic names
     node->declare_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
     node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
     node->declare_parameter("topics.sonar_detections", topics.sonar_detections);
@@ -64,6 +65,7 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("frame_id", frame_id);
     
     node->get_parameter("chirp_mode", chirp_mode);
+    node->get_parameter("high_resolution", high_resolution);
     
     node->get_parameter("ping_free_run", ping_free_run);
     node->get_parameter("ping_interval_ms", ping_interval_ms);
@@ -433,6 +435,8 @@ bool GeminiSonarNode::configureSonar()
     RCLCPP_INFO(this->get_logger(), "  Sound Speed: %d m/s", parameters_.sound_speed_ms);
     RCLCPP_INFO(this->get_logger(), "  Number of Beams: %d", parameters_.num_beams);
     RCLCPP_INFO(this->get_logger(), "  Chirp Mode: %d (0=disabled, 1=enabled, 2=auto)", parameters_.chirp_mode);
+    RCLCPP_INFO(this->get_logger(), "  High Resolution: %s (1200ik enhanced range detail)", 
+                parameters_.high_resolution ? "ENABLED" : "DISABLED");
     
     Svs5ErrorCode result;
     
@@ -497,9 +501,8 @@ bool GeminiSonarNode::configureSonar()
         RCLCPP_WARN(this->get_logger(), "Failed to set performance level (non-critical)");
     }
     
-    // 5. Enable high range resolution for 1200ik
-    // TODO: Make this a parameter? Currently always enabled for best quality
-    bool highRes = true;
+    // 5. Configure high range resolution for 1200ik
+    bool highRes = parameters_.high_resolution;
     result = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_HIGH_RESOLUTION,
         sizeof(bool),

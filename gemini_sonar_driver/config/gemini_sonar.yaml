@@ -15,16 +15,17 @@
     bins_per_beam: 1500    # Range cells per beam
     beam_spacing_deg: 0.25 # Beam spacing in degrees
     
-    # Frame ID
-    frame_id: "gemini_fls" # TF frame ID for sonar data (e.g., "forward_sonar", "port_sonar")
-    
-    # Advanced Sonar Settings
+    # Advanced Sonar 
     chirp_mode: 2          # Chirp mode: 0=disabled, 1=enabled, 2=auto (recommended)
+    high_resolution: true  # High resolution mode (1200ik only): true=enhanced range detail (recommended)
     
-    # Ping Mode Settings
+    # Ping Mode 
     ping_free_run: false   # true=continuous (as fast as possible), false=interval-based
     ping_interval_ms: 100  # Ping interval in ms (0-999) when ping_free_run=false. Manual states 5-65Hz (15-200ms) range dpdendnet.
     ping_ext_trigger: false # true=external TTL hardware trigger, false=software controlled
+
+    # Frame ID
+    frame_id: "gemini_fls" # TF frame ID for sonar data (e.g., "forward_sonar", "port_sonar")
     
     # Topic Names
     topics:

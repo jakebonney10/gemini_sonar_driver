@@ -79,6 +79,7 @@ public:
         
         // Advanced sonar settings
         int chirp_mode = 2;                               ///< Chirp mode: 0=disabled, 1=enabled, 2=auto
+        bool high_resolution = true;                      ///< High resolution mode (1200ik only): true=improved range resolution
         
         // Ping mode settings
         bool ping_free_run = false;                       ///< Ping mode: true=continuous, false=interval-based
