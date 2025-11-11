@@ -226,12 +226,26 @@ marine_acoustic_msgs::msg::SonarImageData createSonarImageData(
     image_data.beam_count = beam_data.size();
     image_data.is_bigendian = false;
     
-    // Flatten 2D beam data into 1D array
-    // Data is organized as [beam0_sample0, beam0_sample1, ..., beam1_sample0, ...]
-    image_data.data.clear();
-    for (const auto& beam : beam_data)
+    if (beam_data.empty())
     {
-        image_data.data.insert(image_data.data.end(), beam.begin(), beam.end());
+        return image_data;
+    }
+    
+    // Flatten 2D beam data into 1D array in ROW-MAJOR order (sample-by-sample)
+    // acoustic_msgs_tools expects: index = sample_idx * num_beams + beam_idx
+    // Data layout: [beam0_sample0, beam1_sample0, ..., beamN_sample0, beam0_sample1, beam1_sample1, ...]
+    size_t num_beams = beam_data.size();
+    size_t samples_per_beam = beam_data[0].size();
+    
+    image_data.data.reserve(num_beams * samples_per_beam);
+    
+    // Iterate sample-by-sample (row-by-row), collecting all beams at each sample
+    for (size_t sample_idx = 0; sample_idx < samples_per_beam; ++sample_idx)
+    {
+        for (size_t beam_idx = 0; beam_idx < num_beams; ++beam_idx)
+        {
+            image_data.data.push_back(beam_data[beam_idx][sample_idx]);
+        }
     }
     
     return image_data;
