@@ -262,9 +262,41 @@ void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int 
     switch (static_cast<SequencerApi::ESvs5MessageType>(messageType))
     {
         case SequencerApi::GEMINI_STATUS:
-            RCLCPP_DEBUG(this->get_logger(), "Received GEMINI_STATUS message");
-            // TODO: Parse CGeminiStatusData structure for sonar health/status, probably create custom gemini msg to report status
+        {
+            // Parse using SDK structures (from GeminiSDKConsole.cpp example)
+            const GLF::GeminiSonarStatusMessage* const statusMsg = 
+                reinterpret_cast<const GLF::GeminiSonarStatusMessage*>(value);
+            const GLF::GeminiStatusRecord* const pStatus = &statusMsg->m_geminiSonarStatus;
+            
+            // Skip if no valid IP address
+            if (!pStatus->m_sonarAltIp)
+            {
+                break;
+            }
+            
+            // Format IP address (stored in little-endian format)
+            unsigned int ip = pStatus->m_sonarAltIp;
+            RCLCPP_DEBUG(this->get_logger(), "Status from %d.%d.%d.%d (device ID: %u)",
+                (ip>>0) & 0xFF, (ip>>8) & 0xFF, (ip>>16) & 0xFF, (ip>>24) & 0xFF,
+                pStatus->m_deviceID);
+
+            // Check for critical status conditions
+            if ((pStatus->m_BOOTSTSRegister & 0x000001ff) == 0x00000001)
+            {
+                RCLCPP_WARN(this->get_logger(), "Sonar in bootloader mode");
+            }
+            else if (pStatus->m_shutdownStatus & 0x0001)
+            {
+                RCLCPP_ERROR(this->get_logger(), "Sonar over temperature!");
+            }
+            else if (pStatus->m_shutdownStatus & 0x0006)
+            {
+                RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                    "Sonar out of water");
+            }
+            
             break;
+        }
             
         case SequencerApi::GLF_LIVE_TARGET_IMAGE:
         {

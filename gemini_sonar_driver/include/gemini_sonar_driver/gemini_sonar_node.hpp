@@ -38,6 +38,7 @@
 #include "Svs5Seq/Svs5SequencerApi.h"
 #include "Gemini/GeminiStructuresPublic.h"
 #include "GenesisSerializer/GlfLoggerGeminiStructure.h"
+#include "GenesisSerializer/GeminiStatusRecord.h"  // For GLF::GeminiSonarStatusMessage and GLF::GeminiStatusRecord
 
 NS_HEAD
 
