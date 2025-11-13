@@ -1,5 +1,6 @@
 #include "gemini_sonar_node.hpp"
 #include <rclcpp/time.hpp>
+#include <sstream>
 
 NS_HEAD
 
@@ -120,12 +121,13 @@ GeminiSonarNode::GeminiSonarNode()
 {
     RCLCPP_INFO(this->get_logger(), "Initializing Gemini Sonar Driver");
     
-    // Set static instance for SDK callback
-    instance_ = this;
-    
     // Declare and read parameters
     parameters_.declare(this);
     parameters_.update(this);
+
+    // Initialize publishers and services
+    publishers_.init(this);
+    services_.init(this);
     
     // Initialize conversion parameters from node parameters
     conversion_params_.frequency_khz = parameters_.frequency_khz;
@@ -134,31 +136,11 @@ GeminiSonarNode::GeminiSonarNode()
     conversion_params_.num_beams = parameters_.num_beams;
     conversion_params_.bins_per_beam = parameters_.bins_per_beam;
     conversion_params_.frame_id = parameters_.frame_id;
-    
-    // Initialize publishers and services
-    publishers_.init(this);
-    services_.init(this);
-    
-    // Initialize SDK
-    if (initializeGeminiSDK())
-    {
-        RCLCPP_INFO(this->get_logger(), "Gemini SDK initialized successfully");
-        
-        // Configure sonar with parameters
-        if (configureSonar())
-        {
-            RCLCPP_INFO(this->get_logger(), "Sonar configured successfully");
-        }
-        else
-        {
-            RCLCPP_ERROR(this->get_logger(), "Failed to configure sonar");
-        }
-    }
-    else
-    {
-        RCLCPP_ERROR(this->get_logger(), "Failed to initialize Gemini SDK");
-    }
-    
+
+    // Initialize SDK and set static instance for SDK callback
+    instance_ = this;
+    initializeGeminiSDK();
+
     RCLCPP_INFO(this->get_logger(), "Gemini Sonar Driver ready. Use services to start/stop sonar.");
 }
 
@@ -194,7 +176,6 @@ void GeminiSonarNode::handleStartSonar(
         return;
     }
     
-    // Start pinging
     if (startPinging())
     {
         response->success = true;
@@ -241,12 +222,12 @@ void GeminiSonarNode::handleStopSonar(
 // Svs5Sequencer SDK Callbacks
 //=============================================================================
 
-void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int size, const char* const value)
+void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int size, const char* const value)
 {
     // Mark that we've received a message from the sonar
     if (!sonar_detected_) {
         sonar_detected_ = true;
-        RCLCPP_INFO(this->get_logger(), "Sonar detected on network!");
+        RCLCPP_INFO(this->get_logger(), "Received message from sonar of type %u", messageType);
     }
     last_message_time_ = this->now().nanoseconds();
     
@@ -263,60 +244,23 @@ void GeminiSonarNode::processSvs5Message(unsigned int messageType, unsigned int 
     {
         case SequencerApi::GEMINI_STATUS:
         {
-            // Parse using SDK structures (from GeminiSDKConsole.cpp example)
-            const GLF::GeminiSonarStatusMessage* const statusMsg = 
-                reinterpret_cast<const GLF::GeminiSonarStatusMessage*>(value);
+            const GLF::GeminiSonarStatusMessage* const statusMsg = reinterpret_cast<const GLF::GeminiSonarStatusMessage*>(value);
             const GLF::GeminiStatusRecord* const pStatus = &statusMsg->m_geminiSonarStatus;
-            
-            // Skip if no valid IP address
-            if (!pStatus->m_sonarAltIp)
-            {
-                break;
-            }
-            
-            // Format IP address (stored in little-endian format)
-            unsigned int ip = pStatus->m_sonarAltIp;
-            RCLCPP_DEBUG(this->get_logger(), "Status from %d.%d.%d.%d (device ID: %u)",
-                (ip>>0) & 0xFF, (ip>>8) & 0xFF, (ip>>16) & 0xFF, (ip>>24) & 0xFF,
-                pStatus->m_deviceID);
-
-            // Check for critical status conditions
-            if ((pStatus->m_BOOTSTSRegister & 0x000001ff) == 0x00000001)
-            {
-                RCLCPP_WARN(this->get_logger(), "Sonar in bootloader mode");
-            }
-            else if (pStatus->m_shutdownStatus & 0x0001)
-            {
-                RCLCPP_ERROR(this->get_logger(), "Sonar over temperature!");
-            }
-            else if (pStatus->m_shutdownStatus & 0x0006)
-            {
-                RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                    "Sonar out of water");
-            }
-            
+            processGeminiStatus(pStatus);
             break;
         }
             
         case SequencerApi::GLF_LIVE_TARGET_IMAGE:
         {
-            // This is the primary sonar imaging data - acoustic beam intensities
             GLF::GLogTargetImage* image = (GLF::GLogTargetImage*)value;
-            if (image)
-            {
-                RCLCPP_DEBUG(this->get_logger(), "Received GLF_LIVE_TARGET_IMAGE (sonar data)");
-                processGLFImage(*image);
-            }
+            RCLCPP_DEBUG(this->get_logger(), "Received GLF_LIVE_TARGET_IMAGE (sonar data)");
+            processGLFImage(*image);
             break;
         }
             
         case SequencerApi::SENSOR_RECORD:
             RCLCPP_DEBUG(this->get_logger(), "Received SENSOR_RECORD");
-            // TODO: Parse sensor data (GPS, compass, etc.) publish to appropriate topics
-            break;
-            
-        case SequencerApi::FRAME_RATE:
-            RCLCPP_DEBUG(this->get_logger(), "Received FRAME_RATE message");
+            // Parse sensor data (GPS, compass, etc.) publish to appropriate topics, might implement later...
             break;
             
         default:
@@ -339,44 +283,27 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     const std::vector<UInt8>* imageData = mainImage.m_vecData;
     const std::vector<double>* bearingTable = mainImage.m_vecBearingTable;
     
-    if (!imageData || !bearingTable || imageData->empty() || bearingTable->empty())
-    {
-        RCLCPP_WARN(this->get_logger(), "GLF image data or bearing table is empty");
-        return;
-    }
-    
     // Calculate dimensions
     size_t num_beams = bearingTable->size();
     size_t total_samples = imageData->size();
     size_t samples_per_beam = (num_beams > 0) ? (total_samples / num_beams) : 0;
     
-    if (samples_per_beam == 0)
-    {
-        RCLCPP_WARN(this->get_logger(), "Invalid GLF image dimensions");
-        return;
-    }
-    
     RCLCPP_DEBUG(this->get_logger(), 
                  "GLF Image: beams=%zu, samples_per_beam=%zu, total=%zu bytes",
                  num_beams, samples_per_beam, total_samples);
-    
-    // Convert GLF data to beam structure for conversions module
-    std::vector<std::vector<uint8_t>> beam_data;
-    beam_data.reserve(num_beams);
-    
-    for (size_t beam_idx = 0; beam_idx < num_beams; ++beam_idx)
+
+    if (ping_number_ <= 5 || ping_number_ % 50 == 0)
     {
-        size_t start_idx = beam_idx * samples_per_beam;
-        size_t end_idx = start_idx + samples_per_beam;
-        
-        if (end_idx <= imageData->size())
-        {
-            std::vector<uint8_t> beam_samples(
-                imageData->begin() + start_idx,
-                imageData->begin() + end_idx
-            );
-            beam_data.push_back(std::move(beam_samples));
-        }
+        RCLCPP_INFO(this->get_logger(),
+            "Ping %u: start_range=%u end_range=%u start_bearing=%u end_bearing=%u compression=%u sos=%.1f freq=%.1f",
+            ping_number_,
+            mainImage.m_uiStartRange,
+            mainImage.m_uiEndRange,
+            mainImage.m_uiStartBearing,
+            mainImage.m_uiEndBearing,
+            mainImage.m_usCompressionType,
+            mainImage.m_fSosAtXd,
+            mainImage.m_uiModulationFrequency / 1000.0);
     }
     
     // Update conversion parameters from GLF metadata
@@ -385,39 +312,49 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     conversion_params_.bins_per_beam = samples_per_beam;
     conversion_params_.frequency_khz = mainImage.m_uiModulationFrequency / 1000.0;
     conversion_params_.sound_speed_ms = mainImage.m_fSosAtXd;
+    conversion_params_.start_sample = mainImage.m_uiStartRange;
     
-    // Calculate range from start/end range fields
-    float range_bins = mainImage.m_uiEndRange - mainImage.m_uiStartRange;
-    conversion_params_.range_m = (range_bins * conversion_params_.sound_speed_ms) / 
-                                  (2.0 * conversion_params_.frequency_khz * 1000.0);
+    // Publish msgs using the conversions module
+    // auto raw_msg = conversions::createRawSonarImage(beam_data, conversion_params_, timestamp);
+    // publishers_.raw_sonar_image_->publish(*raw_msg);
     
-    // Populate bearing table from SDK (factory-calibrated beam angles in degrees)
-    conversion_params_.bearing_table.assign(bearingTable->begin(), bearingTable->end());
-    
-    // Publish messages using the conversions module
-    auto raw_msg = conversions::createRawSonarImage(beam_data, conversion_params_, timestamp);
-    if (raw_msg)
-    {
-        publishers_.raw_sonar_image_->publish(*raw_msg);
-    }
-    
-    auto detections_msg = conversions::createSonarDetections(beam_data, conversion_params_, timestamp);
-    if (detections_msg)
-    {
-        publishers_.sonar_detections_->publish(*detections_msg);
-    }
+    // auto detections_msg = conversions::createSonarDetections(beam_data, conversion_params_, timestamp);
+    // publishers_.sonar_detections_->publish(*detections_msg);
     
     // Publish projected image periodically (every 10 pings)
-    if (ping_number_ % 10 == 0)
-    {
-        auto proj_msg = conversions::createProjectedSonarImage(beam_data, conversion_params_, timestamp);
-        if (proj_msg)
-        {
-            publishers_.projected_sonar_image_->publish(*proj_msg);
-        }
-    }
+    // if (ping_number_ % 10 == 0)
+    // {
+    //     auto proj_msg = conversions::createProjectedSonarImage(beam_data, conversion_params_, timestamp);
+    //     publishers_.projected_sonar_image_->publish(*proj_msg);
+    // }
     
     RCLCPP_DEBUG(this->get_logger(), "Published ping %u", ping_number_);
+}
+
+void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus)
+{
+    if (!pStatus) return;
+
+    // Format IP address (stored in little-endian format)
+    unsigned int ip = pStatus->m_sonarAltIp;
+    RCLCPP_DEBUG(this->get_logger(), "Status from %d.%d.%d.%d (device ID: %u)",
+        (ip>>0) & 0xFF, (ip>>8) & 0xFF, (ip>>16) & 0xFF, (ip>>24) & 0xFF,
+        pStatus->m_deviceID);
+
+    // Check for critical status conditions
+    if ((pStatus->m_BOOTSTSRegister & 0x000001ff) == 0x00000001)
+    {
+        RCLCPP_WARN(this->get_logger(), "Sonar in bootloader mode");
+    }
+    else if (pStatus->m_shutdownStatus & 0x0001)
+    {
+        RCLCPP_ERROR(this->get_logger(), "Sonar over temperature!");
+    }
+    else if (pStatus->m_shutdownStatus & 0x0006)
+    {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+            "Sonar out of water");
+    }
 }
 
 //=============================================================================
@@ -441,14 +378,8 @@ bool GeminiSonarNode::initializeGeminiSDK()
 {
     RCLCPP_INFO(this->get_logger(), "Initializing Gemini SDK (Svs5Sequencer API)...");
     
-    // Set the static instance pointer for the callback
-    instance_ = this;
-    
-    // Create the callback lambda
     SequencerApi::Svs5Callback callback = [](unsigned int msgType, unsigned int size, const char* const value) {
-        if (instance_) {
-            instance_->processSvs5Message(msgType, size, value);
-        }
+        instance_->handleSvs5Message(msgType, size, value);
     };
     
     // Start the Svs5 library - auto-discovers sonars on the network
@@ -473,7 +404,6 @@ bool GeminiSonarNode::initializeGeminiSDK()
         RCLCPP_INFO(this->get_logger(), "Sonar found on network");
     } else {
         RCLCPP_WARN(this->get_logger(), "No sonar detected after 5 second wait");
-        RCLCPP_WARN(this->get_logger(), "Driver will continue, but commands may fail without hardware");
     }
     
     sdk_initialized_ = true;
@@ -481,13 +411,7 @@ bool GeminiSonarNode::initializeGeminiSDK()
 }
 
 bool GeminiSonarNode::configureSonar()
-{
-    if (!sdk_initialized_)
-    {
-        RCLCPP_ERROR(this->get_logger(), "SDK not initialized");
-        return false;
-    }
-    
+{   
     RCLCPP_INFO(this->get_logger(), "Configuring Gemini 1200ik sonar via Svs5Sequencer:");
     RCLCPP_INFO(this->get_logger(), "  Range: %.1f m", parameters_.range_m);
     RCLCPP_INFO(this->get_logger(), "  Gain: %.1f %%", parameters_.gain_percent);
@@ -499,7 +423,7 @@ bool GeminiSonarNode::configureSonar()
     
     Svs5ErrorCode result;
     
-    // 1. Configure range
+    // Configure range
     double range = parameters_.range_m;
     result = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_RANGE,
@@ -512,7 +436,7 @@ bool GeminiSonarNode::configureSonar()
         return false;
     }
     
-    // 2. Configure gain
+    // Configure gain
     int gain = static_cast<int>(parameters_.gain_percent);
     result = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_GAIN,
@@ -525,9 +449,9 @@ bool GeminiSonarNode::configureSonar()
         return false;
     }
     
-    // 3. Configure speed of sound (manual mode)
+    // Configure speed of sound (manual mode)
     SequencerApi::SequencerSosConfig sosConfig;
-    sosConfig.m_bUsedUserSos = true;  // Use manual SOS
+    sosConfig.m_bUsedUserSos = true;  // Use manual SOS TODO: make auto/manual configurable?
     sosConfig.m_manualSos = static_cast<float>(parameters_.sound_speed_ms);
     
     result = SequencerApi::Svs5SetConfiguration(
@@ -541,14 +465,14 @@ bool GeminiSonarNode::configureSonar()
         return false;
     }
     
-    // 4. Configure image quality (beams)
+    // Configure image quality (beams)
     SequencerApi::SonarImageQualityLevel qualityLevel;
     if (parameters_.num_beams >= 512) {
         qualityLevel.m_performance = SequencerApi::UL_HIGH_CPU;  // 512-1024 beams
     } else {
         qualityLevel.m_performance = SequencerApi::HIGH_CPU;      // 256-512 beams
     }
-    qualityLevel.m_screenPixels = 2048;  // Highest quality
+    qualityLevel.m_screenPixels = 2048;  // Highest quality TODO: make configurable?
     
     result = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE,
@@ -560,7 +484,7 @@ bool GeminiSonarNode::configureSonar()
         RCLCPP_WARN(this->get_logger(), "Failed to set performance level (non-critical)");
     }
     
-    // 5. Configure high range resolution for 1200ik
+    // Configure high range resolution for 1200ik
     bool highRes = parameters_.high_resolution;
     result = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_HIGH_RESOLUTION,
@@ -589,21 +513,21 @@ bool GeminiSonarNode::configureSonar()
 }
 
 bool GeminiSonarNode::startPinging()
-{
-    if (!sdk_initialized_)
-    {
-        RCLCPP_ERROR(this->get_logger(), "SDK not initialized");
-        return false;
-    }
-    
+{   
     if (!sonar_detected_)
     {
         RCLCPP_WARN(this->get_logger(), "No sonar detected on network - start command may fail");
-        RCLCPP_WARN(this->get_logger(), "Verify sonar is powered on and connected to network");
+        RCLCPP_WARN(this->get_logger(), "Verify sonar is powered on and connected to network on same subnet i.e 192.168.2.x");
     }
-    
-    RCLCPP_INFO(this->get_logger(), "Starting sonar streaming...");
-    
+
+    // Configure sonar settings before starting pinging
+    if (!configureSonar()) {
+        RCLCPP_ERROR(this->get_logger(), "Sonar configuration failed - cannot start pinging");
+        return false;
+    }
+
+    RCLCPP_INFO(this->get_logger(), "Starting sonar pinging...");
+
     // Configure ping mode from parameters
     SequencerApi::SequencerPingMode pingMode;
     pingMode.m_bFreeRun = parameters_.ping_free_run;
@@ -654,7 +578,7 @@ bool GeminiSonarNode::startPinging()
         RCLCPP_INFO(this->get_logger(), "Waiting for sonar response...");
         
         if (!waitForSonarDetection(3)) {
-            RCLCPP_ERROR(this->get_logger(), "No response from sonar after starting stream");
+            RCLCPP_ERROR(this->get_logger(), "No response from sonar after starting pinging");
             RCLCPP_ERROR(this->get_logger(), "Check that sonar is powered on and network connection is correct");
             return false;
         }
@@ -691,12 +615,8 @@ void GeminiSonarNode::shutdownGeminiSDK()
     if (sdk_initialized_)
     {
         RCLCPP_INFO(this->get_logger(), "Shutting down Gemini SDK");
-        
-        // Stop the Svs5 library
         SequencerApi::StopSvs5();
-        
         sdk_initialized_ = false;
-        RCLCPP_INFO(this->get_logger(), "Gemini SDK shutdown complete");
     }
 }
 

@@ -14,11 +14,45 @@ marine_acoustic_msgs::msg::PingInfo createPingInfo(const ConversionParameters& p
     // Convert frequency from kHz to Hz
     ping_info.frequency = params.frequency_khz * 1000.0;
     ping_info.sound_speed = params.sound_speed_ms;
-    
-    // For now, we don't have per-beam beamwidth info from SDK
-    // These would need to be populated from actual Gemini head data
-    ping_info.tx_beamwidths.clear();
-    ping_info.rx_beamwidths.clear();
+
+    // Approximate beamwidths using adjacent bearing spacing
+    const auto& bearings = params.bearing_table;
+    const size_t beam_count = bearings.size();
+
+    if (beam_count > 0)
+    {
+        ping_info.tx_beamwidths.resize(beam_count, 0.0f);
+        ping_info.rx_beamwidths.resize(beam_count, 0.0f);
+
+        if (beam_count == 1)
+        {
+            // Single beam: width unknown, default to zero
+            ping_info.tx_beamwidths[0] = 0.0f;
+            ping_info.rx_beamwidths[0] = 0.0f;
+        }
+        else
+        {
+            for (size_t i = 0; i < beam_count; ++i)
+            {
+                const double prev_delta = (i == 0)
+                    ? bearings[1] - bearings[0]
+                    : bearings[i] - bearings[i - 1];
+                const double next_delta = (i + 1 < beam_count)
+                    ? bearings[i + 1] - bearings[i]
+                    : bearings[i] - bearings[i - 1];
+
+                const double width = 0.5 * (prev_delta + next_delta);
+                const float width_abs = static_cast<float>(std::abs(width));
+                ping_info.tx_beamwidths[i] = width_abs;
+                ping_info.rx_beamwidths[i] = width_abs;
+            }
+        }
+    }
+    else
+    {
+        ping_info.tx_beamwidths.clear();
+        ping_info.rx_beamwidths.clear();
+    }
     
     return ping_info;
 }
@@ -44,14 +78,19 @@ marine_acoustic_msgs::msg::RawSonarImage::SharedPtr createRawSonarImage(
     
     // Sample rate (samples per second)
     // This is the rate at which range samples are acquired
-    float sample_rate = (params.bins_per_beam * params.sound_speed_ms) / (2.0 * params.range_m);
-    msg->sample_rate = sample_rate;
+    double sample_rate = params.sample_rate_hz;
+    if (sample_rate <= 0.0 && params.range_m > 0.0 && params.bins_per_beam > 0)
+    {
+        sample_rate = (static_cast<double>(params.bins_per_beam) * params.sound_speed_ms) /
+            (2.0 * params.range_m);
+    }
+    msg->sample_rate = static_cast<float>(sample_rate);
     
     // Samples per beam
     msg->samples_per_beam = params.bins_per_beam;
     
     // First sample (typically 0 for starting at sonar head)
-    msg->sample0 = 0.0;
+    msg->sample0 = params.start_sample;
     
     size_t num_beams = beam_data.size();
     
@@ -101,20 +140,28 @@ marine_acoustic_msgs::msg::ProjectedSonarImage::SharedPtr createProjectedSonarIm
     {
         float angle_rad = getBeamAngle(i, params);
         
-        // Beam direction as unit vector (assuming forward sonar looking in +Z direction)
-        // X: forward (sonar look direction)
-        // Y: across-track (positive = starboard)
-        // Z: vertical (positive = up)
-        msg->beam_directions[i].x = std::cos(angle_rad);  // Forward component
-        msg->beam_directions[i].y = std::sin(angle_rad);  // Across-track component
-        msg->beam_directions[i].z = 0.0;                  // Assuming level sonar
+    // Beam direction as unit vector in Y-Z plane:
+    //   Z: forward (look direction)
+    //   Y: starboard (positive to starboard)
+    //   X: up (zero for planar fan)
+    msg->beam_directions[i].x = 0.0;
+    msg->beam_directions[i].y = std::sin(angle_rad);
+    msg->beam_directions[i].z = std::cos(angle_rad);
     }
     
     // Set range bins (center of each bin in meters)
     msg->ranges.resize(params.bins_per_beam);
+    const double bin_resolution = (params.bin_resolution_m > 0.0)
+        ? params.bin_resolution_m
+        : ((params.bins_per_beam > 0)
+            ? (params.range_m / static_cast<double>(params.bins_per_beam))
+            : 0.0);
+    const double start_sample = static_cast<double>(params.start_sample);
+
     for (int i = 0; i < params.bins_per_beam; ++i)
     {
-        msg->ranges[i] = ((static_cast<float>(i) + 0.5f) / params.bins_per_beam) * params.range_m;
+        const double sample_center = start_sample + static_cast<double>(i) + 0.5;
+        msg->ranges[i] = static_cast<float>(sample_center * bin_resolution);
     }
     
     // Image data
@@ -158,12 +205,17 @@ marine_acoustic_msgs::msg::SonarDetections::SharedPtr createSonarDetections(
     
     for (size_t i = 0; i < num_beams; ++i)
     {
-        // Extract detection range from beam data
-        float detection_range = extractDetectionRange(beam_data[i], params.range_m);
-        msg->two_way_travel_times[i] = (2.0f * detection_range) / params.sound_speed_ms;
-        
-        // Extract intensity
-        msg->intensities[i] = extractIntensity(beam_data[i]);
+        size_t peak_index = 0;
+        float peak_intensity = 0.0f;
+        const float detection_range = extractDetectionRange(
+            beam_data[i], params, &peak_index, &peak_intensity);
+
+        const float sound_speed = static_cast<float>(params.sound_speed_ms);
+        msg->two_way_travel_times[i] = (sound_speed > 0.0f)
+            ? (2.0f * detection_range / sound_speed)
+            : 0.0f;
+
+        msg->intensities[i] = peak_intensity;
     }
     
     // TX delays (zero for single-sector sonar)
@@ -181,39 +233,53 @@ marine_acoustic_msgs::msg::SonarDetections::SharedPtr createSonarDetections(
     return msg;
 }
 
-float extractDetectionRange(const std::vector<uint8_t>& beam_samples, float max_range_m)
+float extractDetectionRange(
+    const std::vector<uint8_t>& beam_samples,
+    const ConversionParameters& params,
+    size_t* peak_index,
+    float* peak_intensity)
 {
     if (beam_samples.empty())
     {
-        return max_range_m;
-    }
-    
-    // Find the sample with maximum intensity
-    auto max_it = std::max_element(beam_samples.begin(), beam_samples.end());
-    size_t max_index = std::distance(beam_samples.begin(), max_it);
-    
-    // Convert sample index to range
-    float range = (static_cast<float>(max_index) / beam_samples.size()) * max_range_m;
-    
-    return range;
-}
-
-float extractIntensity(const std::vector<uint8_t>& beam_samples)
-{
-    if (beam_samples.empty())
-    {
+        if (peak_index)
+        {
+            *peak_index = 0;
+        }
+        if (peak_intensity)
+        {
+            *peak_intensity = 0.0f;
+        }
         return 0.0f;
     }
-    
-    // Return maximum intensity value
-    return static_cast<float>(*std::max_element(beam_samples.begin(), beam_samples.end()));
+
+    const auto max_it = std::max_element(beam_samples.begin(), beam_samples.end());
+    const size_t max_index = static_cast<size_t>(std::distance(beam_samples.begin(), max_it));
+
+    if (peak_index)
+    {
+        *peak_index = max_index;
+    }
+    if (peak_intensity)
+    {
+        *peak_intensity = static_cast<float>(*max_it);
+    }
+
+    const double bin_resolution = (params.bin_resolution_m > 0.0)
+        ? params.bin_resolution_m
+        : ((params.bins_per_beam > 0)
+            ? (params.range_m / static_cast<double>(params.bins_per_beam))
+            : 0.0);
+
+    const double sample_center = static_cast<double>(params.start_sample) +
+        static_cast<double>(max_index) + 0.5;
+
+    return static_cast<float>(sample_center * bin_resolution);
 }
 
 float getBeamAngle(size_t beam_index, const ConversionParameters& params)
 {
-    // Use factory-calibrated bearing table from SDK (in degrees)
-    // Convert to radians for ROS messages
-    return static_cast<float>(params.bearing_table[beam_index] * M_PI / 180.0);
+    // Bearing table is stored in radians after preprocessing in the node
+    return static_cast<float>(params.bearing_table[beam_index]);
 }
 
 marine_acoustic_msgs::msg::SonarImageData createSonarImageData(

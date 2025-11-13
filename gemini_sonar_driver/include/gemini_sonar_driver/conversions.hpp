@@ -41,11 +41,15 @@ struct ConversionParameters
     double range_m = 75.0;               ///< Maximum range in meters
     int num_beams = 512;                 ///< Number of beams
     int bins_per_beam = 1500;            ///< Range cells per beam
+    uint32_t start_sample = 0;           ///< First valid sample index (sample0)
+    uint32_t end_sample = 0;             ///< Last valid sample index (inclusive)
+    double bin_resolution_m = 0.0;       ///< Meters represented by each sample bin
+    double sample_rate_hz = 0.0;         ///< Effective sample rate derived from range window
     
     // Frame information
     std::string frame_id = "gemini";     ///< TF frame ID
     
-    // Factory-calibrated beam angles from SDK (in degrees)
+    // Factory-calibrated beam angles from SDK (stored in radians)
     std::vector<double> bearing_table;   ///< Precise beam angles from sonar calibration
 };
 
@@ -119,18 +123,9 @@ marine_acoustic_msgs::msg::SonarDetections::SharedPtr createSonarDetections(
  */
 float extractDetectionRange(
     const std::vector<uint8_t>& beam_samples,
-    float max_range_m);
-
-/**
- * @brief Extract intensity from beam data
- * 
- * Returns the maximum intensity value in the beam.
- * 
- * @param beam_samples Vector of intensity samples for one beam
- * @return Maximum intensity value (0-255 for uint8)
- */
-float extractIntensity(
-    const std::vector<uint8_t>& beam_samples);
+    const ConversionParameters& params,
+    size_t* peak_index = nullptr,
+    float* peak_intensity = nullptr);
 
 /**
  * @brief Get beam angle from SDK bearing table

@@ -148,9 +148,14 @@ protected:
     static void svs5DataCallback(unsigned int messageType, unsigned int size, const char* const value);
 
     /**
-     * @brief Instance method to process Svs5 messages
+     * @brief Instance method to handle Svs5 messages
      */
-    void processSvs5Message(unsigned int messageType, unsigned int size, const char* const value);
+    void handleSvs5Message(unsigned int messageType, unsigned int size, const char* const value);
+
+    /**
+     * @brief Process GLF status messages
+     */
+    void processGeminiStatus(const GLF::GeminiStatusRecord* pStatus);
 
     /**
      * @brief Process GLF sonar image data
