@@ -201,7 +201,6 @@ void GeminiSonarNode::handleStopSonar(
         response->success = false;
         response->message = "Sonar is not running";
         RCLCPP_WARN(this->get_logger(), "%s", response->message.c_str());
-        return;
     }
     
     if (stopPinging())

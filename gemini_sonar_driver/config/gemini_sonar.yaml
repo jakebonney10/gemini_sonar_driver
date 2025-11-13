@@ -1,7 +1,7 @@
 /**:
   ros__parameters:
     # Network Configuration
-    sonar_id: 1
+    sonar_id: 0
     software_mode: "Evo"  # Options: Evo, EvoC, SeaNet, SeaNetC
     
     # Sonar Operation 
