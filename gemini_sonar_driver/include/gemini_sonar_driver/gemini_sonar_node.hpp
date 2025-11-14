@@ -183,6 +183,16 @@ protected:
     bool stopPinging();
 
     /**
+     * @brief Start Gemini data logging (Native GLF format)
+     */
+    void startLogging();
+
+    /**
+     * @brief Stop Gemini data logging (Native GLF format)
+     */
+    void stopLogging();
+
+    /**
      * @brief Shutdown the Gemini SDK
      */
     void shutdownGeminiSDK();
