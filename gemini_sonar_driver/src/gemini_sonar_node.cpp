@@ -569,7 +569,8 @@ bool GeminiSonarNode::startPinging()
         sonar_detected_ = false;
         return false;
     }
-    
+
+    startLogging();
     return true;
 }
 
@@ -590,8 +591,65 @@ bool GeminiSonarNode::stopPinging()
     }
     
     sonar_streaming_ = false;
+    stopLogging();
     RCLCPP_INFO(this->get_logger(), "Sonar streaming stopped");
     return true;
+}
+
+void GeminiSonarNode::startLogging()
+{
+    // Get home directory and construct absolute path
+    // Note: SDK appends date folders and .glf/.dat filenames automatically, so just provide base directory
+    const char* home = std::getenv("HOME");
+    if (!home) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to get HOME environment variable for logging path");
+        return;
+    }
+    
+    std::string log_path = std::string(home) + "/gemini_logs";
+    
+    Svs5ErrorCode result_log_path = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_FILE_LOCATION,
+        log_path.length() + 1,
+        log_path.c_str(),
+        parameters_.sonar_id
+    );
+
+    if (result_log_path != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to set logging path: 0x%08lX", result_log_path);
+        return;
+    }
+
+    bool start_recording = true;
+    Svs5ErrorCode result_record = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_REC,
+        sizeof(bool),
+        &start_recording,
+        parameters_.sonar_id
+    );
+
+    if (result_record != SVS5_SEQUENCER_STATUS_OK)
+    {
+        RCLCPP_ERROR(this->get_logger(), "Failed to start Gemini data logging: 0x%08lX", result_record);
+    }
+    else
+    {
+        RCLCPP_INFO(this->get_logger(), "Gemini data logging started to directory: %s", log_path.c_str());
+        RCLCPP_INFO(this->get_logger(), "  (SDK will create date subdirectories and .glf files automatically)");
+    }
+}
+
+void GeminiSonarNode::stopLogging()
+{
+    bool stop_recording = false;
+    Svs5ErrorCode result = SequencerApi::Svs5SetConfiguration(
+        SequencerApi::SVS5_CONFIG_REC,
+        sizeof(bool),
+        &stop_recording,
+        parameters_.sonar_id
+    );
+    
+    RCLCPP_INFO(this->get_logger(), "Gemini data logging stopped");
 }
 
 void GeminiSonarNode::shutdownGeminiSDK()
