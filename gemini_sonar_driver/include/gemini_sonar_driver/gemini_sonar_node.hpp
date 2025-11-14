@@ -203,7 +203,7 @@ protected:
     conversions::ConversionParameters conversion_params_;
 
     // SDK state
-    std::atomic<bool> sonar_running_{false};
+    std::atomic<bool> sonar_streaming_{false};
     std::atomic<bool> sdk_initialized_{false};
     std::atomic<bool> sonar_detected_{false};        ///< True if we've received any messages from sonar
     std::atomic<uint64_t> last_message_time_{0};     ///< Timestamp of last received message

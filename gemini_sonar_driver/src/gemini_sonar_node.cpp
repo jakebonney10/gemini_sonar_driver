@@ -140,6 +140,9 @@ GeminiSonarNode::GeminiSonarNode()
     // Initialize SDK and set static instance for SDK callback
     instance_ = this;
     initializeGeminiSDK();
+    
+    // Stop streaming (set offline mode)
+    stopPinging();  // Ensure pinging is stopped initially
 
     RCLCPP_INFO(this->get_logger(), "Gemini Sonar Driver ready. Use services to start/stop sonar.");
 }
@@ -148,11 +151,7 @@ GeminiSonarNode::~GeminiSonarNode()
 {
     RCLCPP_INFO(this->get_logger(), "Shutting down Gemini Sonar Driver");
     
-    if (sonar_running_)
-    {
-        stopPinging();
-    }
-    
+    stopPinging();
     shutdownGeminiSDK();
     
     instance_ = nullptr;
@@ -168,7 +167,7 @@ void GeminiSonarNode::handleStartSonar(
 {
     RCLCPP_INFO(this->get_logger(), "Received start sonar request");
     
-    if (sonar_running_)
+    if (sonar_streaming_)
     {
         response->success = false;
         response->message = "Sonar is already running";
@@ -195,14 +194,6 @@ void GeminiSonarNode::handleStopSonar(
     std::shared_ptr<gemini_sonar_driver_interfaces::srv::StopSonar::Response> response)
 {
     RCLCPP_INFO(this->get_logger(), "Received stop sonar request");
-    
-    if (!sonar_running_)
-    {
-        response->success = false;
-        response->message = "Sonar is not running";
-        RCLCPP_WARN(this->get_logger(), "%s", response->message.c_str());
-        return;
-    }
     
     if (stopPinging())
     {
@@ -516,8 +507,7 @@ bool GeminiSonarNode::startPinging()
 {   
     if (!sonar_detected_)
     {
-        RCLCPP_WARN(this->get_logger(), "No sonar detected on network - start command may fail");
-        RCLCPP_WARN(this->get_logger(), "Verify sonar is powered on and connected to network on same subnet i.e 192.168.2.x");
+        RCLCPP_WARN(this->get_logger(), "No sonar detected on network - Verify sonar is powered on and connected to network on same subnet i.e 192.168.2.x");
     }
 
     // Configure sonar settings before starting pinging
@@ -570,18 +560,14 @@ bool GeminiSonarNode::startPinging()
         return false;
     }
     
-    sonar_running_ = true;
+    sonar_streaming_ = true;
     RCLCPP_INFO(this->get_logger(), "Sonar streaming started");
     
-    // Wait briefly to see if we get data
-    if (!sonar_detected_) {
-        RCLCPP_INFO(this->get_logger(), "Waiting for sonar response...");
-        
-        if (!waitForSonarDetection(3)) {
-            RCLCPP_ERROR(this->get_logger(), "No response from sonar after starting pinging");
-            RCLCPP_ERROR(this->get_logger(), "Check that sonar is powered on and network connection is correct");
-            return false;
-        }
+    if (!waitForSonarDetection(3)) {
+        RCLCPP_ERROR(this->get_logger(), "No response from sonar after starting pinging");
+        RCLCPP_ERROR(this->get_logger(), "Check that sonar is powered on and on same subnet i.e 192.168.2.x");
+        sonar_detected_ = false;
+        return false;
     }
     
     return true;
@@ -589,8 +575,6 @@ bool GeminiSonarNode::startPinging()
 
 bool GeminiSonarNode::stopPinging()
 {
-    RCLCPP_INFO(this->get_logger(), "Stopping sonar streaming...");
-    
     // Stop streaming (set offline mode)
     bool online = false;
     Svs5ErrorCode result = SequencerApi::Svs5SetConfiguration(
@@ -605,7 +589,7 @@ bool GeminiSonarNode::stopPinging()
         return false;
     }
     
-    sonar_running_ = false;
+    sonar_streaming_ = false;
     RCLCPP_INFO(this->get_logger(), "Sonar streaming stopped");
     return true;
 }
