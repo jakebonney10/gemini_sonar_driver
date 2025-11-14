@@ -87,7 +87,10 @@ public:
         bool ping_free_run = false;                       ///< Ping mode: true=continuous, false=interval-based
         int ping_interval_ms = 100;                       ///< Ping interval in ms (0-999) when free_run=false
         bool ping_ext_trigger = false;                    ///< External TTL trigger: true=hardware trigger, false=software
-        
+
+        // Logging configuration
+        std::string log_directory = "/data/gemini";        ///< Directory to save GLF log files
+
         // Topic configuration
         struct Topics
         {
@@ -185,7 +188,7 @@ protected:
     /**
      * @brief Start Gemini data logging (Native GLF format)
      */
-    void startLogging();
+    void startLogging(std::string log_directory);
 
     /**
      * @brief Stop Gemini data logging (Native GLF format)

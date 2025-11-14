@@ -46,6 +46,9 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
     node->declare_parameter("topics.sonar_detections", topics.sonar_detections);
     node->declare_parameter("topics.raw_packet", topics.raw_packet);
+
+    // Logging configuration
+    node->declare_parameter("log_directory", log_directory);
 }
 
 void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
@@ -74,6 +77,8 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
     node->get_parameter("topics.sonar_detections", topics.sonar_detections);
     node->get_parameter("topics.raw_packet", topics.raw_packet);
+
+    node->get_parameter("log_directory", log_directory);
 }
 
 //=============================================================================
@@ -142,7 +147,7 @@ GeminiSonarNode::GeminiSonarNode()
     initializeGeminiSDK();
     
     // Stop streaming (set offline mode)
-    stopPinging();  // Ensure pinging is stopped initially
+    //stopPinging();  // Ensure pinging is stopped initially
 
     RCLCPP_INFO(this->get_logger(), "Gemini Sonar Driver ready. Use services to start/stop sonar.");
 }
@@ -187,6 +192,11 @@ void GeminiSonarNode::handleStartSonar(
         response->message = "Failed to start sonar";
         RCLCPP_ERROR(this->get_logger(), "%s", response->message.c_str());
     }
+
+    if (request->enable_logging) {
+        const std::string& log_dir = request->log_directory.empty() ? parameters_.log_directory : request->log_directory;
+        startLogging(log_dir);
+    }
 }
 
 void GeminiSonarNode::handleStopSonar(
@@ -219,6 +229,7 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
     if (!sonar_detected_) {
         sonar_detected_ = true;
         RCLCPP_INFO(this->get_logger(), "Received message from sonar of type %u", messageType);
+        stopPinging(); // Stop pinging once sonar is detected initially/turned on
     }
     last_message_time_ = this->now().nanoseconds();
     
@@ -570,7 +581,6 @@ bool GeminiSonarNode::startPinging()
         return false;
     }
 
-    startLogging();
     return true;
 }
 
@@ -596,7 +606,7 @@ bool GeminiSonarNode::stopPinging()
     return true;
 }
 
-void GeminiSonarNode::startLogging()
+void GeminiSonarNode::startLogging(std::string log_directory)
 {
     // Get home directory and construct absolute path
     // Note: SDK appends date folders and .glf/.dat filenames automatically, so just provide base directory
@@ -605,9 +615,9 @@ void GeminiSonarNode::startLogging()
         RCLCPP_ERROR(this->get_logger(), "Failed to get HOME environment variable for logging path");
         return;
     }
-    
-    std::string log_path = std::string(home) + "/gemini_logs";
-    
+
+    std::string log_path = std::string(home) + log_directory;
+
     Svs5ErrorCode result_log_path = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_FILE_LOCATION,
         log_path.length() + 1,
@@ -635,7 +645,6 @@ void GeminiSonarNode::startLogging()
     else
     {
         RCLCPP_INFO(this->get_logger(), "Gemini data logging started to directory: %s", log_path.c_str());
-        RCLCPP_INFO(this->get_logger(), "  (SDK will create date subdirectories and .glf files automatically)");
     }
 }
 
