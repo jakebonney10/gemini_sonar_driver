@@ -24,7 +24,10 @@
     ping_ext_trigger: false # true=external TTL hardware trigger, false=software controlled
 
     # Frame ID
-    frame_id: "gemini_fls" # TF frame ID for sonar data (e.g., "forward_sonar", "port_sonar")
+    frame_id: "gemini_fls" # TF frame ID for sonar data 
+
+    # Default Logging Configuration can also be set via StartSonar service
+    log_directory: "/data/gemini"     # Directory to save GLF log files
     
     # Topic Names
     topics:
