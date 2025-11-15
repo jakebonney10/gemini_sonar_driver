@@ -361,6 +361,20 @@ bool GeminiSonarNode::waitForSonarDetection(int timeout_seconds)
     return sonar_detected_;
 }
 
+void GeminiSonarNode::setSdkParameter(SequencerApi::ESvs5ConfigType config_type,
+                                      size_t size,
+                                      const void* data,
+                                      const std::string& param_name)
+{
+    Svs5ErrorCode result = SequencerApi::Svs5SetConfiguration(
+        config_type, size, data, parameters_.sonar_id);
+    
+    if (result != SVS5_SEQUENCER_STATUS_OK) {
+        RCLCPP_WARN(this->get_logger(), "Failed to set %s (error: 0x%08lX)", 
+                   param_name.c_str(), result);
+    }
+}
+
 bool GeminiSonarNode::initializeGeminiSDK()
 {
     RCLCPP_INFO(this->get_logger(), "Initializing Gemini SDK (Svs5Sequencer API)...");
@@ -408,92 +422,38 @@ bool GeminiSonarNode::configureSonar()
     RCLCPP_INFO(this->get_logger(), "  High Resolution: %s (1200ik enhanced range detail)", 
                 parameters_.high_resolution ? "ENABLED" : "DISABLED");
     
-    Svs5ErrorCode result;
-    
     // Configure range
     double range = parameters_.range_m;
-    result = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_RANGE,
-        sizeof(double),
-        &range,
-        parameters_.sonar_id
-    );
-    if (result != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to set range");
-        return false;
-    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_RANGE, sizeof(double), &range, "range");
     
     // Configure gain
     int gain = static_cast<int>(parameters_.gain_percent);
-    result = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_GAIN,
-        sizeof(int),
-        &gain,
-        parameters_.sonar_id
-    );
-    if (result != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to set gain");
-        return false;
-    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_GAIN, sizeof(int), &gain, "gain");
     
-    // Configure speed of sound (manual mode)
+    // Configure speed of sound
     SequencerApi::SequencerSosConfig sosConfig;
-    sosConfig.m_bUsedUserSos = true;  // Use manual SOS TODO: make auto/manual configurable?
+    sosConfig.m_bUsedUserSos = true;
     sosConfig.m_manualSos = static_cast<float>(parameters_.sound_speed_ms);
+    setSdkParameter(SequencerApi::SVS5_CONFIG_SOUND_VELOCITY, sizeof(SequencerApi::SequencerSosConfig), 
+                   &sosConfig, "sound velocity");
     
-    result = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_SOUND_VELOCITY,
-        sizeof(SequencerApi::SequencerSosConfig),
-        &sosConfig,
-        parameters_.sonar_id
-    );
-    if (result != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to set sound velocity");
-        return false;
-    }
-    
-    // Configure image quality (beams)
+    // Configure image quality/beams
     SequencerApi::SonarImageQualityLevel qualityLevel;
-    if (parameters_.num_beams >= 512) {
-        qualityLevel.m_performance = SequencerApi::UL_HIGH_CPU;  // 512-1024 beams
-    } else {
-        qualityLevel.m_performance = SequencerApi::HIGH_CPU;      // 256-512 beams
-    }
-    qualityLevel.m_screenPixels = 2048;  // Highest quality TODO: make configurable?
+    qualityLevel.m_performance = (parameters_.num_beams >= 512) ? 
+                                 SequencerApi::UL_HIGH_CPU : SequencerApi::HIGH_CPU;
+    qualityLevel.m_screenPixels = 2048;
+    setSdkParameter(SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE, sizeof(SequencerApi::SonarImageQualityLevel),
+                   &qualityLevel, "performance level");
     
-    result = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE,
-        sizeof(SequencerApi::SonarImageQualityLevel),
-        &qualityLevel,
-        parameters_.sonar_id
-    );
-    if (result != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_WARN(this->get_logger(), "Failed to set performance level (non-critical)");
-    }
-    
-    // Configure high range resolution for 1200ik
+    // Configure high resolution mode
     bool highRes = parameters_.high_resolution;
-    result = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_HIGH_RESOLUTION,
-        sizeof(bool),
-        &highRes,
-        parameters_.sonar_id
-    );
-    if (result != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_WARN(this->get_logger(), "Failed to set range resolution (non-critical)");
-    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_HIGH_RESOLUTION, sizeof(bool), 
+                   &highRes, "high resolution");
     
     // Configure chirp mode
     int chirpMode = parameters_.chirp_mode;
-    result = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_CHIRP_MODE,
-        sizeof(int),
-        &chirpMode,
-        parameters_.sonar_id
-    );
-    if (result != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_WARN(this->get_logger(), "Failed to set chirp mode (non-critical)");
-    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_CHIRP_MODE, sizeof(int), 
+                   &chirpMode, "chirp mode");
     
     RCLCPP_INFO(this->get_logger(), "Sonar configuration sent successfully");
     return true;
@@ -530,31 +490,12 @@ bool GeminiSonarNode::startPinging()
         RCLCPP_INFO(this->get_logger(), "  External TTL Trigger: ENABLED");
     }
     
-    Svs5ErrorCode result = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_PING_MODE,
-        sizeof(SequencerApi::SequencerPingMode),
-        &pingMode,
-        parameters_.sonar_id
-    );
-    
-    if (result != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to set ping mode");
-        return false;
-    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_PING_MODE, sizeof(SequencerApi::SequencerPingMode),
+                   &pingMode, "ping mode");
     
     // Start streaming (set online mode)
     bool online = true;
-    result = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_ONLINE,
-        sizeof(bool),
-        &online,
-        parameters_.sonar_id
-    );
-    
-    if (result != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to start sonar streaming");
-        return false;
-    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_ONLINE, sizeof(bool), &online, "online mode");
     
     sonar_streaming_ = true;
     RCLCPP_INFO(this->get_logger(), "Sonar streaming started");
@@ -573,17 +514,7 @@ bool GeminiSonarNode::stopPinging()
 {
     // Stop streaming (set offline mode)
     bool online = false;
-    Svs5ErrorCode result = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_ONLINE,
-        sizeof(bool),
-        &online,
-        parameters_.sonar_id
-    );
-    
-    if (result != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to stop sonar streaming");
-        return false;
-    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_ONLINE, sizeof(bool), &online, "online mode (stop)");
     
     sonar_streaming_ = false;
     stopLogging();
@@ -603,45 +534,19 @@ void GeminiSonarNode::startLogging(std::string log_directory)
 
     std::string log_path = std::string(home) + log_directory;
 
-    Svs5ErrorCode result_log_path = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_FILE_LOCATION,
-        log_path.length() + 1,
-        log_path.c_str(),
-        parameters_.sonar_id
-    );
-
-    if (result_log_path != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_ERROR(this->get_logger(), "Failed to set logging path: 0x%08lX", result_log_path);
-        return;
-    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_FILE_LOCATION, log_path.length() + 1, 
+                   log_path.c_str(), "log file location");
 
     bool start_recording = true;
-    Svs5ErrorCode result_record = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_REC,
-        sizeof(bool),
-        &start_recording,
-        parameters_.sonar_id
-    );
-
-    if (result_record != SVS5_SEQUENCER_STATUS_OK)
-    {
-        RCLCPP_ERROR(this->get_logger(), "Failed to start Gemini data logging: 0x%08lX", result_record);
-    }
-    else
-    {
-        RCLCPP_INFO(this->get_logger(), "Gemini data logging started to directory: %s", log_path.c_str());
-    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_REC, sizeof(bool), &start_recording, "recording");
+    
+    RCLCPP_INFO(this->get_logger(), "Gemini data logging started to directory: %s", log_path.c_str());
 }
 
 void GeminiSonarNode::stopLogging()
 {
     bool stop_recording = false;
-    Svs5ErrorCode result = SequencerApi::Svs5SetConfiguration(
-        SequencerApi::SVS5_CONFIG_REC,
-        sizeof(bool),
-        &stop_recording,
-        parameters_.sonar_id
-    );
+    setSdkParameter(SequencerApi::SVS5_CONFIG_REC, sizeof(bool), &stop_recording, "recording (stop)");
     
     RCLCPP_INFO(this->get_logger(), "Gemini data logging stopped");
 }

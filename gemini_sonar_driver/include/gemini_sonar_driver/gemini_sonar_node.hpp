@@ -207,6 +207,18 @@ protected:
      */
     bool waitForSonarDetection(int timeout_seconds);
 
+    /**
+     * @brief Helper to set SDK configuration with error logging
+     * @param config_type The configuration type to set
+     * @param size Size of the configuration data
+     * @param data Pointer to configuration data
+     * @param param_name Human-readable parameter name for logging
+     */
+    void setSdkParameter(SequencerApi::ESvs5ConfigType config_type, 
+                         size_t size, 
+                         const void* data, 
+                         const std::string& param_name);
+
     // Member variables
     Parameters parameters_;
     Publishers publishers_;
