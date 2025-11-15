@@ -47,7 +47,7 @@ struct ConversionParameters
     double sample_rate_hz = 0.0;         ///< Effective sample rate derived from range window
     
     // Frame information
-    std::string frame_id = "gemini";     ///< TF frame ID
+    std::string frame_id = "gemini_fls";     ///< TF frame ID
     
     // Factory-calibrated beam angles from SDK (stored in radians)
     std::vector<double> bearing_table;   ///< Precise beam angles from sonar calibration
@@ -110,37 +110,6 @@ marine_acoustic_msgs::msg::SonarDetections::SharedPtr createSonarDetections(
     const std::vector<std::vector<uint8_t>>& beam_data,
     const ConversionParameters& params,
     const rclcpp::Time& timestamp);
-
-/**
- * @brief Extract detection range from beam data
- * 
- * Finds the range of the strongest return in a beam by finding the maximum
- * intensity sample.
- * 
- * @param beam_samples Vector of intensity samples for one beam
- * @param max_range_m Maximum range in meters
- * @return Detection range in meters
- */
-float extractDetectionRange(
-    const std::vector<uint8_t>& beam_samples,
-    const ConversionParameters& params,
-    size_t* peak_index = nullptr,
-    float* peak_intensity = nullptr);
-
-/**
- * @brief Get beam angle from SDK bearing table
- * 
- * Returns the factory-calibrated beam angle from the SDK bearing table.
- * The bearing table contains precise beam angles accounting for manufacturing
- * tolerances and non-uniform beam spacing.
- * 
- * @param beam_index Index of the beam (0 to num_beams-1)
- * @param params Conversion parameters containing bearing table
- * @return Beam angle in radians
- */
-float getBeamAngle(
-    size_t beam_index,
-    const ConversionParameters& params);
 
 /**
  * @brief Create SonarImageData structure from beam data

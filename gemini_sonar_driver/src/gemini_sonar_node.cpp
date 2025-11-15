@@ -133,21 +133,10 @@ GeminiSonarNode::GeminiSonarNode()
     // Initialize publishers and services
     publishers_.init(this);
     services_.init(this);
-    
-    // Initialize conversion parameters from node parameters
-    conversion_params_.frequency_khz = parameters_.frequency_khz;
-    conversion_params_.sound_speed_ms = parameters_.sound_speed_ms;
-    conversion_params_.range_m = parameters_.range_m;
-    conversion_params_.num_beams = parameters_.num_beams;
-    conversion_params_.bins_per_beam = parameters_.bins_per_beam;
-    conversion_params_.frame_id = parameters_.frame_id;
 
     // Initialize SDK and set static instance for SDK callback
     instance_ = this;
     initializeGeminiSDK();
-    
-    // Stop streaming (set offline mode)
-    //stopPinging();  // Ensure pinging is stopped initially
 
     RCLCPP_INFO(this->get_logger(), "Gemini Sonar Driver ready. Use services to start/stop sonar.");
 }
@@ -241,7 +230,6 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
     raw_msg->data.assign(value, value + size);
     publishers_.raw_packet_->publish(*raw_msg);
     
-    // Process based on Svs5 message type
     switch (static_cast<SequencerApi::ESvs5MessageType>(messageType))
     {
         case SequencerApi::GEMINI_STATUS:
@@ -260,10 +248,7 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
             break;
         }
             
-        case SequencerApi::SENSOR_RECORD:
-            RCLCPP_DEBUG(this->get_logger(), "Received SENSOR_RECORD");
-            // Parse sensor data (GPS, compass, etc.) publish to appropriate topics, might implement later...
-            break;
+        // implement more message types as needed i.e SENSOR_RECORD, etc.
             
         default:
             RCLCPP_DEBUG(this->get_logger(), "Received unhandled Svs5 message type: %u", messageType);
@@ -495,10 +480,10 @@ bool GeminiSonarNode::configureSonar()
         parameters_.sonar_id
     );
     if (result != SVS5_SEQUENCER_STATUS_OK) {
-        RCLCPP_WARN(this->get_logger(), "Failed to set high resolution (non-critical)");
+        RCLCPP_WARN(this->get_logger(), "Failed to set range resolution (non-critical)");
     }
     
-    // 6. Configure chirp mode
+    // Configure chirp mode
     int chirpMode = parameters_.chirp_mode;
     result = SequencerApi::Svs5SetConfiguration(
         SequencerApi::SVS5_CONFIG_CHIRP_MODE,

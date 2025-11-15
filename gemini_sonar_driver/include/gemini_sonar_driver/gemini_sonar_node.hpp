@@ -63,7 +63,7 @@ public:
     struct Parameters
     {
         // Network configuration
-        uint16_t sonar_id = 1;                           ///< Sonar ID (default 1)
+        uint16_t sonar_id = 1;                            ///< Sonar ID (default 1)
         std::string software_mode = "Evo";                ///< SDK mode: Evo, EvoC, SeaNet, SeaNetC
         
         // Sonar operation parameters
