@@ -46,6 +46,7 @@ public:
     struct Parameters
     {
         int timer_period = 500; ///< Timer period in milliseconds
+        std::string log_level = "info"; ///< ROS logger level (debug, info, warn, error, fatal)
 
         struct Topics{
             std::string subscriber_topic = "input_topic";  ///< Name of the input topic
