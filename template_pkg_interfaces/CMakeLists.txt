@@ -7,7 +7,8 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 
 set(MSG_FILES
-    "msg/RawPacket.msg")
+    "msg/RawPacket.msg"
+    "msg/LoggerStatus.msg")
 
 rosidl_generate_interfaces(${PROJECT_NAME}
     ${MSG_FILES}
