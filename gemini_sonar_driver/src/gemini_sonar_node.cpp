@@ -113,6 +113,7 @@ GeminiSonarNode::GeminiSonarNode()
     // Initialize SDK and set static instance for SDK callback
     instance_ = this;
     initializeGeminiSDK();
+    configureSonar();
 
     RCLCPP_INFO(this->get_logger(), "Gemini Sonar Driver ready. Use services to start/stop sonar.");
 }
@@ -443,12 +444,12 @@ bool GeminiSonarNode::configureSonar()
     setSdkParameter(SequencerApi::SVS5_CONFIG_PING_MODE, sizeof(SequencerApi::SequencerPingMode),
                    &pingMode, "ping mode");
 
-    // Configure cpu performance level
-    // SequencerApi::SonarImageQualityLevel qualityLevel;
-    // qualityLevel.m_performance = SequencerApi::HIGH_CPU; // default to high performance mode
-    // qualityLevel.m_screenPixels = 2048;
-    // setSdkParameter(SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE, sizeof(SequencerApi::SonarImageQualityLevel),
-    //                &qualityLevel, "performance level");
+    // Configure cpu performance level i.e. image quality or num_beams (LOW_CPU, MEDIUM_CPU, HIGH_CPU, UL_HIGH_CPU)
+    SequencerApi::SonarImageQualityLevel qualityLevel;
+    qualityLevel.m_performance = SequencerApi::HIGH_CPU; // default to high performance mode TODO: make param
+    qualityLevel.m_screenPixels = 2048; // 2048 means highest quality (512,1024) TODO: make param
+    setSdkParameter(SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE, sizeof(SequencerApi::SonarImageQualityLevel),
+                   &qualityLevel, "performance level");
     
     return true;
 }

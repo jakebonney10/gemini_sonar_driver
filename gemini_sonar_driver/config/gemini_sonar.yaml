@@ -13,7 +13,7 @@
     # Sonar Operation 
     range_m: 10.0             # Range in meters (1-120m for 720kHz, 1-50m for 1200kHz)
     gain_percent: 50.0        # Receiver gain 0-100%
-    aperture: 120             # Sonar aperture in degrees (Switch between: 120 or 65)
+    aperture: 120.0           # Sonar aperture in degrees (Switch between: 120 or 65)
     sound_speed_ms: 1500      # Sound speed in m/s
     sound_speed_manual: true  # Sound speed mode: true=manual, false=auto (uses sonar SOS sensor)
     high_resolution: true     # High resolution mode: true=1200kHz (recommended), false=720kHz
