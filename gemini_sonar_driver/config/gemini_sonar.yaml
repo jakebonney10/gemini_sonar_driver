@@ -19,10 +19,6 @@
     high_resolution: true     # High resolution mode: true=1200kHz (recommended), false=720kHz
     chirp_mode: 2             # Chirp mode: 0=disabled, 1=enabled, 2=auto (recommended)
     
-    # Advanced Sonar 
-    num_beams: 1024        # Number of beams (typical: 512 LF, 1024 HF)
-    bins_per_beam: 1500    # Range cells per beam
-    
     # Ping Mode 
     ping_free_run: false   # true=continuous (as fast as possible), false=interval-based
     ping_interval_ms: 100  # Ping interval in ms (0-999) when ping_free_run=false. Manual states 5-65Hz (15-200ms) range dpdendnet.

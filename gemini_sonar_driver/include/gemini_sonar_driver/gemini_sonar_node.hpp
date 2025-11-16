@@ -13,6 +13,7 @@
 #include <marine_acoustic_msgs/msg/sonar_detections.hpp>
 #include <marine_acoustic_msgs/msg/detection_flag.hpp>
 #include <gemini_sonar_driver_interfaces/msg/raw_packet.hpp>
+#include <gemini_sonar_driver_interfaces/msg/gemini_status.hpp>
 #include <gemini_sonar_driver_interfaces/srv/start_sonar.hpp>
 #include <gemini_sonar_driver_interfaces/srv/stop_sonar.hpp>
 
@@ -92,6 +93,7 @@ public:
             std::string projected_sonar_image = "gemini/projected_sonar";     ///< marine_acoustic_msgs/ProjectedSonarImage
             std::string sonar_detections = "gemini/detections";               ///< marine_acoustic_msgs/SonarDetections
             std::string raw_packet = "gemini/raw";                            ///< Raw Gemini packets
+            std::string status = "gemini/status";                             ///< Gemini device status
         } topics;
 
         Parameters();
@@ -108,6 +110,7 @@ public:
         rclcpp::Publisher<marine_acoustic_msgs::msg::ProjectedSonarImage>::SharedPtr projected_sonar_image_;
         rclcpp::Publisher<marine_acoustic_msgs::msg::SonarDetections>::SharedPtr sonar_detections_;
         rclcpp::Publisher<gemini_sonar_driver_interfaces::msg::RawPacket>::SharedPtr raw_packet_;
+        rclcpp::Publisher<gemini_sonar_driver_interfaces::msg::GeminiStatus>::SharedPtr status_;
         
         void init(GeminiSonarNode* node);
     };

@@ -8,8 +8,7 @@ find_package(std_msgs REQUIRED)
 
 set(MSG_FILES
     "msg/RawPacket.msg"
-    "msg/GeminiBFStatus.msg"
-    "msg/GeminiDAStatus.msg")
+    "msg/GeminiStatus.msg")
 
 set(SRV_FILES
     "srv/StartSonar.srv"

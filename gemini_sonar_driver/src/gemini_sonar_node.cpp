@@ -33,6 +33,7 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
     node->declare_parameter("topics.sonar_detections", topics.sonar_detections);
     node->declare_parameter("topics.raw_packet", topics.raw_packet);
+    node->declare_parameter("topics.status", topics.status);
 }
 
 void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
@@ -55,6 +56,7 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
     node->get_parameter("topics.sonar_detections", topics.sonar_detections);
     node->get_parameter("topics.raw_packet", topics.raw_packet);
+    node->get_parameter("topics.status", topics.status);
 }
 
 //=============================================================================
@@ -74,6 +76,9 @@ void GeminiSonarNode::Publishers::init(GeminiSonarNode* node)
     
     raw_packet_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::RawPacket>(
         node->parameters_.topics.raw_packet, 10);
+
+    status_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::GeminiStatus>(
+        node->parameters_.topics.status, 10);
 }
 
 //=============================================================================
@@ -225,10 +230,10 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
             break;
         }
             
-        // implement more message types as needed i.e SENSOR_RECORD, etc.
+        // implement more message types as needed i.e LOGGER_REC_UPDATE (type 4), FRAME_RATE (type 10) SENSOR_RECORD, etc.
             
         default:
-            RCLCPP_DEBUG(this->get_logger(), "Received unhandled Svs5 message type: %u", messageType);
+            RCLCPP_WARN(this->get_logger(), "Received unhandled Svs5 message type: %u", messageType);
             break;
     }
 }
@@ -301,6 +306,11 @@ void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus
 
     // Format IP address (stored in little-endian format)
     unsigned int ip = pStatus->m_sonarAltIp;
+    std::ostringstream ip_stream;
+    ip_stream << ((ip >> 0) & 0xFF) << "."
+              << ((ip >> 8) & 0xFF) << "."
+              << ((ip >> 16) & 0xFF) << "."
+              << ((ip >> 24) & 0xFF);
     RCLCPP_DEBUG(this->get_logger(), "Status from %d.%d.%d.%d (device ID: %u)",
         (ip>>0) & 0xFF, (ip>>8) & 0xFF, (ip>>16) & 0xFF, (ip>>24) & 0xFF,
         pStatus->m_deviceID);
@@ -319,6 +329,20 @@ void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
             "Sonar out of water");
     }
+
+    gemini_sonar_driver_interfaces::msg::GeminiStatus status_msg;
+    status_msg.header.stamp = this->now();
+    status_msg.header.frame_id = parameters_.frame_id;
+    status_msg.ip_address = ip_stream.str();
+    status_msg.sonar_id = pStatus->m_deviceID;
+    status_msg.bootloader_mode = ((pStatus->m_BOOTSTSRegister & 0x000001ff) == 0x00000001);
+    status_msg.over_temperature = static_cast<bool>(pStatus->m_shutdownStatus & 0x0001);
+    status_msg.out_of_water = static_cast<bool>(pStatus->m_shutdownStatus & 0x0006);
+    status_msg.shutdown_status = static_cast<uint16_t>(pStatus->m_shutdownStatus & 0xFFFF);
+    status_msg.boot_status = static_cast<uint16_t>(pStatus->m_BOOTSTSRegister & 0xFFFF);
+
+    publishers_.status_->publish(status_msg);
+
 }
 
 //=============================================================================
