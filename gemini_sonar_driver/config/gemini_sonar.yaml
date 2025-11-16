@@ -3,31 +3,30 @@
     # Network Configuration
     sonar_id: 0
     software_mode: "Evo"  # Options: Evo, EvoC, SeaNet, SeaNetC
-    
-    # Sonar Operation 
-    range_m: 10.0          # Range in meters (0.1-120m for 720kHz, 0.1-50m for 1200kHz)
-    gain_percent: 50.0     # Receiver gain 0-100%
-    sound_speed_ms: 1500   # Sound speed in m/s
-    frequency_khz: 1200.0  # Operating frequency (720, 1200 kHz typically)
-    
-    # Image/Data 
-    num_beams: 1024        # Number of beams (typical: 512 LF, 1024 HF)
-    bins_per_beam: 1500    # Range cells per beam
-    
-    # Advanced Sonar 
-    chirp_mode: 2          # Chirp mode: 0=disabled, 1=enabled, 2=auto (recommended)
-    high_resolution: true  # High resolution mode (1200ik only): true=enhanced range detail (recommended)
-    
-    # Ping Mode 
-    ping_free_run: false   # true=continuous (as fast as possible), false=interval-based
-    ping_interval_ms: 100  # Ping interval in ms (0-999) when ping_free_run=false. Manual states 5-65Hz (15-200ms) range dpdendnet.
-    ping_ext_trigger: false # true=external TTL hardware trigger, false=software controlled
 
     # Frame ID
     frame_id: "gemini_fls" # TF frame ID for sonar data 
 
     # Default Logging Configuration can also be set via StartSonar service
     log_directory: "/data/gemini"     # Directory to save GLF log files
+    
+    # Sonar Operation 
+    range_m: 10.0             # Range in meters (1-120m for 720kHz, 1-50m for 1200kHz)
+    gain_percent: 50.0        # Receiver gain 0-100%
+    aperture: 120             # Sonar aperture in degrees (Switch between: 120 or 65)
+    sound_speed_ms: 1500      # Sound speed in m/s
+    sound_speed_manual: true  # Sound speed mode: true=manual, false=auto (uses sonar SOS sensor)
+    high_resolution: true     # High resolution mode: true=1200kHz (recommended), false=720kHz
+    chirp_mode: 2             # Chirp mode: 0=disabled, 1=enabled, 2=auto (recommended)
+    
+    # Advanced Sonar 
+    num_beams: 1024        # Number of beams (typical: 512 LF, 1024 HF)
+    bins_per_beam: 1500    # Range cells per beam
+    
+    # Ping Mode 
+    ping_free_run: false   # true=continuous (as fast as possible), false=interval-based
+    ping_interval_ms: 100  # Ping interval in ms (0-999) when ping_free_run=false. Manual states 5-65Hz (15-200ms) range dpdendnet.
+    ping_ext_trigger: false # true=external TTL hardware trigger, false=software controlled
     
     # Topic Names
     topics:

@@ -62,36 +62,30 @@ public:
      */
     struct Parameters
     {
-        // Network configuration
-        uint16_t sonar_id = 1;                            ///< Sonar ID (default 1)
-        std::string software_mode = "Evo";                ///< SDK mode: Evo, EvoC, SeaNet, SeaNetC
-        
-        // Sonar operation parameters
-        double range_m = 75.0;                            ///< Range in meters
-        double gain_percent = 50.0;                       ///< Receiver gain (0-100%)
-        int sound_speed_ms = 1500;                        ///< Sound speed in m/s
-        double frequency_khz = 720.0;                     ///< Operating frequency in kHz
-        
-        // Image/data parameters
-        int num_beams = 512;                              ///< Number of beams
-        int bins_per_beam = 1500;                         ///< Bins per beam (range cells)
-        
         // Frame configuration
         std::string frame_id = "gemini_fls";              ///< TF frame ID for sonar data
-        
-        // Advanced sonar settings
-        int chirp_mode = 2;                               ///< Chirp mode: 0=disabled, 1=enabled, 2=auto
-        bool high_resolution = true;                      ///< High resolution mode (1200ik only): true=improved range resolution
-        
-        // Ping mode settings
-        bool ping_free_run = false;                       ///< Ping mode: true=continuous, false=interval-based
-        int ping_interval_ms = 100;                       ///< Ping interval in ms (0-999) when free_run=false
-        bool ping_ext_trigger = false;                    ///< External TTL trigger: true=hardware trigger, false=software
 
         // Logging configuration
         std::string log_directory = "/data/gemini";        ///< Directory to save GLF log files
 
-        // Topic configuration
+        // Network configuration
+        uint16_t sonar_id = 1;                            ///< Sonar ID (default 1, 0 will reach all sonars on network)
+        std::string software_mode = "Evo";                ///< SDK mode: Evo, EvoC, SeaNet, SeaNetC
+        
+        // Sonar operation 
+        double range_m = 10.0;                            ///< Range in meters (1-120m for 720kHz, 1-50m for 1200kHz)
+        double gain_percent = 50.0;                       ///< Receiver gain (0-100%)
+        double aperture = 120.0;                          ///< Sonar aperture in degrees (Switch between: 120 or 65)
+        int sound_speed_ms = 1500;                        ///< Sound speed in m/s
+        bool sound_speed_manual = false;                  ///< Sound speed mode: true=manual, false=auto (uses sonar SOS sensor)
+        int chirp_mode = 2;                               ///< Chirp mode: 0=disabled, 1=enabled, 2=auto
+        bool high_resolution = true;                      ///< High resolution mode (1200ik only): true=1200kHz, false=720kHz
+        
+        // Ping mode
+        bool ping_free_run = false;                       ///< Ping mode: true=continuous, false=interval-based
+        int ping_interval_ms = 100;                       ///< Ping interval in ms (0-999) when free_run=false
+        bool ping_ext_trigger = false;                    ///< External TTL trigger: true=hardware trigger, false=software
+
         struct Topics
         {
             std::string raw_sonar_image = "gemini/raw_sonar_image";           ///< marine_acoustic_msgs/RawSonarImage
