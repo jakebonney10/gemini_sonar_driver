@@ -33,13 +33,22 @@ def generate_launch_description():
         description='Directory for ROS2 bag files'
     )
     
+    log_level_arg = DeclareLaunchArgument(
+        'log_level',
+        default_value='info',
+        description='ROS logger level: debug, info, warn, error, fatal'
+    )
+    
     # Gemini sonar driver node
     gemini_node = Node(
         package='gemini_sonar_driver',
         executable='gemini_sonar_node',
         name='gemini_sonar_driver',
         output='screen',
-        parameters=[LaunchConfiguration('config_file')],
+        parameters=[
+            LaunchConfiguration('config_file'),
+            {'log_level': LaunchConfiguration('log_level')}
+        ],
         emulate_tty=True
     )
     
@@ -47,5 +56,6 @@ def generate_launch_description():
         config_file_arg,
         enable_rosbag_arg,
         bag_directory_arg,
+        log_level_arg,
         gemini_node
     ])

@@ -9,6 +9,7 @@
 
     # Default Logging Configuration can also be set via StartSonar service
     log_directory: "/data/gemini"     # Directory to save GLF log files
+    log_level: "info"                 # ROS logger level: debug, info, warn, error, fatal
     
     # Sonar Operation 
     range_m: 10.0             # Range in meters (1-120m for 720kHz, 1-50m for 1200kHz)

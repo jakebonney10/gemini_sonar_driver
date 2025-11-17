@@ -1,5 +1,7 @@
 #include "gemini_sonar_node.hpp"
 #include <rclcpp/time.hpp>
+#include <rcutils/logging.h>
+#include <algorithm>
 #include <sstream>
 
 NS_HEAD
@@ -17,6 +19,7 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
 {   
     node->declare_parameter("frame_id", frame_id);
     node->declare_parameter("log_directory", log_directory);
+    node->declare_parameter("log_level", log_level);
     node->declare_parameter("sonar_id", sonar_id);
     node->declare_parameter("software_mode", software_mode);
     node->declare_parameter("range_m", range_m);
@@ -40,6 +43,7 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
 {
     node->get_parameter("frame_id", frame_id);
     node->get_parameter("log_directory", log_directory);
+    node->get_parameter("log_level", log_level);
     node->get_parameter("sonar_id", sonar_id);
     node->get_parameter("software_mode", software_mode);
     node->get_parameter("range_m", range_m);
@@ -110,6 +114,28 @@ GeminiSonarNode::GeminiSonarNode()
     // Declare and read parameters
     parameters_.declare(this);
     parameters_.update(this);
+
+    // Set logger level based on parameter
+    auto logger = this->get_logger();
+    std::string log_level_lower = parameters_.log_level;
+    std::transform(log_level_lower.begin(), log_level_lower.end(), log_level_lower.begin(), ::tolower);
+    
+    if (log_level_lower == "debug") {
+        rcutils_logging_set_logger_level(logger.get_name(), RCUTILS_LOG_SEVERITY_DEBUG);
+    } else if (log_level_lower == "info") {
+        rcutils_logging_set_logger_level(logger.get_name(), RCUTILS_LOG_SEVERITY_INFO);
+    } else if (log_level_lower == "warn") {
+        rcutils_logging_set_logger_level(logger.get_name(), RCUTILS_LOG_SEVERITY_WARN);
+    } else if (log_level_lower == "error") {
+        rcutils_logging_set_logger_level(logger.get_name(), RCUTILS_LOG_SEVERITY_ERROR);
+    } else if (log_level_lower == "fatal") {
+        rcutils_logging_set_logger_level(logger.get_name(), RCUTILS_LOG_SEVERITY_FATAL);
+    } else {
+        RCLCPP_WARN(logger, "Invalid log_level parameter '%s', using default (INFO)", parameters_.log_level.c_str());
+        rcutils_logging_set_logger_level(logger.get_name(), RCUTILS_LOG_SEVERITY_INFO);
+    }
+    
+    RCLCPP_DEBUG(logger, "Logger level set to: %s", parameters_.log_level.c_str());
 
     // Initialize publishers and services
     publishers_.init(this);

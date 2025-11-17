@@ -68,6 +68,7 @@ public:
 
         // Logging configuration
         std::string log_directory = "/data/gemini";        ///< Directory to save GLF log files
+        std::string log_level = "info";                    ///< ROS logger level: debug, info, warn, error, fatal
 
         // Network configuration
         uint16_t sonar_id = 1;                            ///< Sonar ID (default 1, 0 will reach all sonars on network)
