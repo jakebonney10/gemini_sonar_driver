@@ -44,6 +44,27 @@ num_beams: 512           # Number of beams
 ros2 launch gemini_sonar_driver gemini_sonar.launch.py
 ```
 
+### Configure Logging Level
+
+The ROS logger level can be configured in three ways:
+
+**1. Via YAML config file** (`config/gemini_sonar.yaml`):
+```yaml
+/**:
+  ros__parameters:
+    log_level: "debug"  # Options: debug, info, warn, error, fatal
+```
+
+**2. Via launch file argument**:
+```bash
+ros2 launch gemini_sonar_driver gemini_sonar.launch.py log_level:=debug
+```
+
+**3. Via command line parameter**:
+```bash
+ros2 run gemini_sonar_driver gemini_sonar_node --ros-args -p log_level:=debug
+```
+
 ### Start the Sonar
 
 ```bash
@@ -105,6 +126,7 @@ ros2 bag record /gemini/sonar_image /gemini/projection
 |-----------|------|---------|-------------|
 | `sonar_id` | int | 1 | Sonar ID on network |
 | `software_mode` | string | "Evo" | SDK mode (Evo/EvoC/SeaNet/SeaNetC) |
+| `log_level` | string | "info" | ROS logger level (debug/info/warn/error/fatal) |
 | `range_m` | double | 75.0 | Maximum range in meters |
 | `gain_percent` | double | 50.0 | Receiver gain 0-100% |
 | `sound_speed_ms` | int | 1500 | Sound speed in m/s |
