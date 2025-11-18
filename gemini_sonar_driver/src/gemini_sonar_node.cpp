@@ -34,6 +34,7 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     node->declare_parameter("topics.sonar_detections", topics.sonar_detections);
     node->declare_parameter("topics.raw_packet", topics.raw_packet);
     node->declare_parameter("topics.status", topics.status);
+    node->declare_parameter("topics.logger_status", topics.logger_status);
 }
 
 void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
@@ -57,6 +58,7 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("topics.sonar_detections", topics.sonar_detections);
     node->get_parameter("topics.raw_packet", topics.raw_packet);
     node->get_parameter("topics.status", topics.status);
+    node->get_parameter("topics.logger_status", topics.logger_status);
 }
 
 //=============================================================================
@@ -79,6 +81,9 @@ void GeminiSonarNode::Publishers::init(GeminiSonarNode* node)
 
     status_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::GeminiStatus>(
         node->parameters_.topics.status, 10);
+
+    logger_status_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::LoggerStatus>(
+        node->parameters_.topics.logger_status, 10);
 }
 
 //=============================================================================
@@ -229,8 +234,16 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
             processGLFImage(*image);
             break;
         }
+
+        case SequencerApi::LOGGER_REC_UPDATE:
+        {
+            const GLF::SOutputFileInfo* loggerInfo = reinterpret_cast<const GLF::SOutputFileInfo*>(value);
+            RCLCPP_DEBUG(this->get_logger(), "Received LOGGER_REC_UPDATE");
+            processLoggerRecUpdate(loggerInfo);
+            break;
+        }
             
-        // implement more message types as needed i.e LOGGER_REC_UPDATE (type 4), FRAME_RATE (type 10) SENSOR_RECORD, etc.
+        // implement more message types as needed i.e FRAME_RATE (type 10) SENSOR_RECORD, etc.
             
         default:
             RCLCPP_WARN(this->get_logger(), "Received unhandled Svs5 message type: %u", messageType);
@@ -343,6 +356,23 @@ void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus
 
     publishers_.status_->publish(status_msg);
 
+}
+
+void GeminiSonarNode::processLoggerRecUpdate(const GLF::SOutputFileInfo* loggerInfo)
+{
+    if (!loggerInfo) return;
+    
+    gemini_sonar_driver_interfaces::msg::LoggerStatus logger_msg;
+    logger_msg.header.stamp = this->now();
+    logger_msg.header.frame_id = parameters_.frame_id;
+    logger_msg.file_name = loggerInfo->m_strFileName;
+    logger_msg.number_of_records = loggerInfo->m_uiNumberOfRecords;
+    logger_msg.file_size_bytes = loggerInfo->m_fileSizeBytes;
+    logger_msg.disk_space_free_bytes = loggerInfo->m_diskSpaceFreeBytes;
+    logger_msg.percent_disk_space_free = loggerInfo->m_percentDiskSpaceFree;
+    logger_msg.recording_time_left_secs = loggerInfo->m_recordingTimeLeftSecs;
+
+    publishers_.logger_status_->publish(logger_msg);
 }
 
 //=============================================================================

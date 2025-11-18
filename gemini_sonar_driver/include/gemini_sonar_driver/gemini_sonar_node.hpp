@@ -14,6 +14,7 @@
 #include <marine_acoustic_msgs/msg/detection_flag.hpp>
 #include <gemini_sonar_driver_interfaces/msg/raw_packet.hpp>
 #include <gemini_sonar_driver_interfaces/msg/gemini_status.hpp>
+#include <gemini_sonar_driver_interfaces/msg/logger_status.hpp>
 #include <gemini_sonar_driver_interfaces/srv/start_sonar.hpp>
 #include <gemini_sonar_driver_interfaces/srv/stop_sonar.hpp>
 
@@ -40,6 +41,7 @@
 #include "Gemini/GeminiStructuresPublic.h"
 #include "GenesisSerializer/GlfLoggerGeminiStructure.h"
 #include "GenesisSerializer/GeminiStatusRecord.h"  // For GLF::GeminiSonarStatusMessage and GLF::GeminiStatusRecord
+#include "GenesisSerializer/GlfLoggerStatusStructure.h"  // For GLF::SOutputFileInfo
 
 NS_HEAD
 
@@ -94,6 +96,7 @@ public:
             std::string sonar_detections = "gemini/detections";               ///< marine_acoustic_msgs/SonarDetections
             std::string raw_packet = "gemini/raw";                            ///< Raw Gemini packets
             std::string status = "gemini/status";                             ///< Gemini device status
+            std::string logger_status = "gemini/logger_status";               ///< Logger recording status
         } topics;
 
         Parameters();
@@ -111,6 +114,7 @@ public:
         rclcpp::Publisher<marine_acoustic_msgs::msg::SonarDetections>::SharedPtr sonar_detections_;
         rclcpp::Publisher<gemini_sonar_driver_interfaces::msg::RawPacket>::SharedPtr raw_packet_;
         rclcpp::Publisher<gemini_sonar_driver_interfaces::msg::GeminiStatus>::SharedPtr status_;
+        rclcpp::Publisher<gemini_sonar_driver_interfaces::msg::LoggerStatus>::SharedPtr logger_status_;
         
         void init(GeminiSonarNode* node);
     };
@@ -161,6 +165,11 @@ protected:
      * @brief Process GLF sonar image data
      */
     void processGLFImage(const GLF::GLogTargetImage& image);
+
+    /**
+     * @brief Process logger recording update messages
+     */
+    void processLoggerRecUpdate(const GLF::SOutputFileInfo* loggerInfo);
 
     /**
      * @brief Initialize the Gemini SDK and configure sonar
