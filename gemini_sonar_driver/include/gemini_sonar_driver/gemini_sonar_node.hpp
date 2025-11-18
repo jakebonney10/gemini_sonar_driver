@@ -41,6 +41,7 @@
 #include "Gemini/GeminiStructuresPublic.h"
 #include "GenesisSerializer/GlfLoggerGeminiStructure.h"
 #include "GenesisSerializer/GeminiStatusRecord.h"  // For GLF::GeminiSonarStatusMessage and GLF::GeminiStatusRecord
+#include "GenesisSerializer/GlfLoggerStatusStructure.h"  // For GLF::SOutputFileInfo
 
 NS_HEAD
 
@@ -71,7 +72,7 @@ public:
         std::string log_directory = "/data/gemini";        ///< Directory to save GLF log files
 
         // Network configuration
-        uint16_t sonar_id = 1;                            ///< Sonar ID (default 1, 0 will reach all sonars on network)
+        uint16_t sonar_id = 0;                            ///< Sonar ID (default 1, 0 will reach all sonars on network)
         std::string software_mode = "Evo";                ///< SDK mode: Evo, EvoC, SeaNet, SeaNetC
         
         // Sonar operation 

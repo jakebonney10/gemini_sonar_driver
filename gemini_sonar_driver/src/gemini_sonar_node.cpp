@@ -361,21 +361,7 @@ void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus
 void GeminiSonarNode::processLoggerRecUpdate(const GLF::SOutputFileInfo* loggerInfo)
 {
     if (!loggerInfo) return;
-
-    RCLCPP_DEBUG(this->get_logger(), "Logger Record Update:\n"
-        "\tFileName: %s\n"
-        "\tNo Of Records: %u\n"
-        "\tFile Size(bytes): %llu\n"
-        "\tFree Disk Space: %llu\n"
-        "\tPercentage Disk Space Free: %.2f\n"
-        "\tRecording Time Left: %u",
-        loggerInfo->m_strFileName.c_str(),
-        loggerInfo->m_uiNumberOfRecords,
-        loggerInfo->m_fileSizeBytes,
-        loggerInfo->m_diskSpaceFreeBytes,
-        loggerInfo->m_percentDiskSpaceFree,
-        loggerInfo->m_recordingTimeLeftSecs);
-
+    
     gemini_sonar_driver_interfaces::msg::LoggerStatus logger_msg;
     logger_msg.header.stamp = this->now();
     logger_msg.header.frame_id = parameters_.frame_id;
