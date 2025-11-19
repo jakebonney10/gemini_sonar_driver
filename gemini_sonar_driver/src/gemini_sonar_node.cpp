@@ -283,14 +283,19 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
             metadata.start_bearing_deg,
             metadata.end_bearing_deg,
             metadata.frequency_khz,
-            metadata.beam_aperture_deg,
             metadata.sound_speed_ms,
+            metadata.beam_aperture_deg,
             metadata.gain_percent,
             metadata.chirp_enabled ? "ON" : "OFF");
     }
     
     // Extract beam data
     glf_processor::BeamData beam_data = glf_processor::extractBeamData(mainImage, metadata);
+    
+    // Print detailed diagnostics for first ping
+    if (ping_number_ == 1) {
+        glf_processor::printPingDiagnostics(mainImage, metadata, beam_data, this->get_logger());
+    }
     
     // TODO: Publish marine_acoustic_msgs
     // auto raw_msg = conversions::createRawSonarImage(beam_data.beams, conversion_params_, timestamp);

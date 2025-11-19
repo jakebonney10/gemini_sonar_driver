@@ -23,6 +23,31 @@ NS_HEAD
 namespace glf_processor
 {
 
+//=============================================================================
+// Ping Flags Bit Masks (m_usPingFlags)
+//=============================================================================
+
+/// Ping flags bit definitions
+namespace PingFlags
+{
+    constexpr uint16_t FREQUENCY_MASK = 0x0001;  ///< Bit 0: Frequency mode
+    constexpr uint16_t SOS_MODE_MASK  = 0x8000;  ///< Bit 15: Speed of sound mode
+}
+
+/// Ping frequency modes
+enum class FrequencyMode : uint8_t
+{
+    LOW_FREQUENCY  = 0,  ///< 0 = LF mode
+    HIGH_FREQUENCY = 1   ///< 1 = HF mode (1200kHz for 1200ik)
+};
+
+/// Speed of sound source modes
+enum class SoSMode : uint8_t
+{
+    SONAR_SENSOR = 0,    ///< 0 = Using sonar's internal SOS sensor
+    MANUAL       = 1     ///< 1 = Using manually configured SOS value
+};
+
 /**
  * @brief Processed ping metadata extracted from GLF::GMainImage
  */
@@ -111,6 +136,26 @@ bool isCompressed(const GLF::GMainImage& mainImage);
  * @return true if decompression succeeded or not needed, false on error
  */
 bool decompress(GLF::GMainImage& mainImage);
+
+/**
+ * @brief Print diagnostic information for a single ping
+ * 
+ * Logs detailed information about ping data to verify correct parsing:
+ * - Dimensions (beams, samples)
+ * - Bearing angles (first 10 beams)
+ * - Sample intensity values from multiple positions
+ * - Data indexing verification
+ * 
+ * @param mainImage GLF main image structure from SDK (for SDK bearing table inspection)
+ * @param metadata Extracted ping metadata
+ * @param beam_data Extracted beam data
+ * @param logger ROS2 logger for output
+ */
+void printPingDiagnostics(
+    const GLF::GMainImage& mainImage,
+    const PingMetadata& metadata,
+    const BeamData& beam_data,
+    rclcpp::Logger logger);
 
 } // namespace glf_processor
 
