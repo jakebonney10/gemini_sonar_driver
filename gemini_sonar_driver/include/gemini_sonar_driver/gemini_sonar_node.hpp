@@ -3,6 +3,7 @@
 // Local package includes
 #include "package_defs.hpp"
 #include "gemini_sonar_driver/conversions.hpp"
+#include "gemini_sonar_driver/glf_processor.hpp"
 
 // ROS2 includes
 #include <rclcpp/rclcpp.hpp>

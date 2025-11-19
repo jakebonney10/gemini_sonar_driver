@@ -242,6 +242,13 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
             processLoggerRecUpdate(loggerInfo);
             break;
         }
+
+        case SequencerApi::FRAME_RATE:
+        {
+            unsigned int fps = *(unsigned int*)value;
+            RCLCPP_DEBUG(this->get_logger(), "Received FRAME_RATE message: %u", fps);
+            break;
+        }
             
         // implement more message types as needed i.e FRAME_RATE (type 10) SENSOR_RECORD, etc.
             
@@ -258,59 +265,48 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     ping_number_++;
     rclcpp::Time timestamp = this->now();
     
-    // Extract image data from GLF structure
+    // Extract main image from GLF structure
     const GLF::GMainImage& mainImage = image.m_mainImage;
     
-    // Get image dimensions
-    const std::vector<UInt8>* imageData = mainImage.m_vecData;
-    const std::vector<double>* bearingTable = mainImage.m_vecBearingTable;
+    // Extract ping metadata
+    glf_processor::PingMetadata metadata = glf_processor::extractPingMetadata(mainImage, ping_number_);
     
-    // Calculate dimensions
-    size_t num_beams = bearingTable->size();
-    size_t total_samples = imageData->size();
-    size_t samples_per_beam = (num_beams > 0) ? (total_samples / num_beams) : 0;
-    
-    RCLCPP_DEBUG(this->get_logger(), 
-                 "GLF Image: beams=%zu, samples_per_beam=%zu, total=%zu bytes",
-                 num_beams, samples_per_beam, total_samples);
-
-    if (ping_number_ <= 5 || ping_number_ % 50 == 0)
-    {
+    // Log ping information periodically
+    if (ping_number_ <= 5 || ping_number_ % 50 == 0) {
         RCLCPP_INFO(this->get_logger(),
-            "Ping %u: start_range=%u end_range=%u start_bearing=%u end_bearing=%u compression=%u sos=%.1f freq=%.1f",
-            ping_number_,
-            mainImage.m_uiStartRange,
-            mainImage.m_uiEndRange,
-            mainImage.m_uiStartBearing,
-            mainImage.m_uiEndBearing,
-            mainImage.m_usCompressionType,
-            mainImage.m_fSosAtXd,
-            mainImage.m_uiModulationFrequency / 1000.0);
+            "Ping %u: beams=%u samples=%u range=[%u-%u] bearing=[%u-%u] freq=%.1fkHz sos=%.1fm/s aperture=%.1f gain=%d%% chirp=%s",
+            metadata.ping_number,
+            metadata.num_beams,
+            metadata.samples_per_beam,
+            metadata.start_range_bin,
+            metadata.end_range_bin,
+            metadata.start_bearing_deg,
+            metadata.end_bearing_deg,
+            metadata.frequency_khz,
+            metadata.beam_aperture_deg,
+            metadata.sound_speed_ms,
+            metadata.gain_percent,
+            metadata.chirp_enabled ? "ON" : "OFF");
     }
     
-    // Update conversion parameters from GLF metadata
-    conversion_params_.frame_id = parameters_.frame_id;
-    conversion_params_.num_beams = num_beams;
-    conversion_params_.bins_per_beam = samples_per_beam;
-    conversion_params_.frequency_khz = mainImage.m_uiModulationFrequency / 1000.0;
-    conversion_params_.sound_speed_ms = mainImage.m_fSosAtXd;
-    conversion_params_.start_sample = mainImage.m_uiStartRange;
+    // Extract beam data
+    glf_processor::BeamData beam_data = glf_processor::extractBeamData(mainImage, metadata);
     
-    // Publish msgs using the conversions module
-    // auto raw_msg = conversions::createRawSonarImage(beam_data, conversion_params_, timestamp);
+    // TODO: Publish marine_acoustic_msgs
+    // auto raw_msg = conversions::createRawSonarImage(beam_data.beams, conversion_params_, timestamp);
     // publishers_.raw_sonar_image_->publish(*raw_msg);
     
-    // auto detections_msg = conversions::createSonarDetections(beam_data, conversion_params_, timestamp);
+    // auto detections_msg = conversions::createSonarDetections(beam_data.beams, conversion_params_, timestamp);
     // publishers_.sonar_detections_->publish(*detections_msg);
     
     // Publish projected image periodically (every 10 pings)
-    // if (ping_number_ % 10 == 0)
-    // {
-    //     auto proj_msg = conversions::createProjectedSonarImage(beam_data, conversion_params_, timestamp);
+    // if (ping_number_ % 10 == 0) {
+    //     auto proj_msg = conversions::createProjectedSonarImage(beam_data.beams, conversion_params_, timestamp);
     //     publishers_.projected_sonar_image_->publish(*proj_msg);
     // }
     
-    RCLCPP_DEBUG(this->get_logger(), "Published ping %u", ping_number_);
+    RCLCPP_DEBUG(this->get_logger(), "Processed ping %u with %zu beams", 
+                 ping_number_, beam_data.beams.size());
 }
 
 void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus)
@@ -517,6 +513,7 @@ bool GeminiSonarNode::startPinging()
     }
     
     bool online = true;
+    configureSonar();
     setSdkParameter(SequencerApi::SVS5_CONFIG_ONLINE, sizeof(bool), &online, "online mode");
     
     sonar_streaming_ = true;
