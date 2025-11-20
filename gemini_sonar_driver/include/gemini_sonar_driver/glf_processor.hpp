@@ -1,7 +1,9 @@
 #pragma once
 
 #include "package_defs.hpp"
-#include "gemini_sonar_driver/conversions.hpp"
+
+// ROS includes (minimal for Logger type)
+#include <rclcpp/logging.hpp>
 
 // Gemini SDK GLF structures
 #include "types.h"
@@ -90,7 +92,8 @@ struct PingMetadata
  */
 struct BeamData
 {
-    std::vector<std::vector<uint8_t>> beams; ///< Raw intensity data [beam_index][range_bin]
+    std::vector<uint8_t> flat_data;          ///< Raw flat intensity data in row-major format (OPTIMAL for ROS)
+    std::vector<std::vector<uint8_t>> beams; ///< 2D beam structure [beam_index][range_bin] (for processing)
     std::vector<double> bearing_angles_rad;  ///< Factory-calibrated beam angles (radians)
 };
 

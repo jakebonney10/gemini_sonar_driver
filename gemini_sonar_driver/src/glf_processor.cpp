@@ -70,25 +70,22 @@ BeamData extractBeamData(
         return beam_data;  // Data size mismatch
     }
     
+    // Store raw flat data directly - OPTIMAL for ROS message packing!
+    // This is already in row-major (beam-major) format: [beam0_samples, beam1_samples, ...]
+    beam_data.flat_data.assign(flat_data.begin(), flat_data.end());
+    
     // Extract bearing angles from SDK's factory-calibrated bearing table
     // The bearing table is in RADIANS and contains the actual beam angles
-    // from factory calibration (not offsets!)
-    beam_data.bearing_angles_rad.reserve(bearing_table.size());
-    for (double angle_rad : bearing_table) {
-        beam_data.bearing_angles_rad.push_back(angle_rad);
-    }
+    beam_data.bearing_angles_rad.assign(bearing_table.begin(), bearing_table.end());
     
-    // Reorganize flat data into 2D beam structure for easier manipulation
-    // GLF format: [beam0_all_samples, beam1_all_samples, ...]
-    // We convert to: beams[beam_index][sample_index]
+    // Also create 2D structure for algorithms that need per-beam access
+    // (e.g., peak detection, filtering)
     beam_data.beams.resize(metadata.num_beams);
     
     for (size_t beam_idx = 0; beam_idx < metadata.num_beams; ++beam_idx) {
-        // Calculate starting position for this beam in the flat array
         size_t beam_start = beam_idx * metadata.samples_per_beam;
         size_t beam_end = beam_start + metadata.samples_per_beam;
         
-        // Extract this beam's samples
         beam_data.beams[beam_idx].assign(
             flat_data.begin() + beam_start,
             flat_data.begin() + beam_end

@@ -301,15 +301,6 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     // auto raw_msg = conversions::createRawSonarImage(beam_data.beams, conversion_params_, timestamp);
     // publishers_.raw_sonar_image_->publish(*raw_msg);
     
-    // auto detections_msg = conversions::createSonarDetections(beam_data.beams, conversion_params_, timestamp);
-    // publishers_.sonar_detections_->publish(*detections_msg);
-    
-    // Publish projected image periodically (every 10 pings)
-    // if (ping_number_ % 10 == 0) {
-    //     auto proj_msg = conversions::createProjectedSonarImage(beam_data.beams, conversion_params_, timestamp);
-    //     publishers_.projected_sonar_image_->publish(*proj_msg);
-    // }
-    
     RCLCPP_DEBUG(this->get_logger(), "Processed ping %u with %zu beams", 
                  ping_number_, beam_data.beams.size());
 }

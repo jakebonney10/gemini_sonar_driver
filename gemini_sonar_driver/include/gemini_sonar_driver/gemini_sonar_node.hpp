@@ -2,7 +2,6 @@
 
 // Local package includes
 #include "package_defs.hpp"
-#include "gemini_sonar_driver/conversions.hpp"
 #include "gemini_sonar_driver/glf_processor.hpp"
 
 // ROS2 includes
@@ -230,9 +229,6 @@ protected:
     Parameters parameters_;
     Publishers publishers_;
     Services services_;
-
-    // Conversion parameters for message creation
-    conversions::ConversionParameters conversion_params_;
 
     // SDK state
     std::atomic<bool> sonar_streaming_{false};
