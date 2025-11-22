@@ -4,6 +4,10 @@
 
 // ROS includes (minimal for Logger type)
 #include <rclcpp/logging.hpp>
+#include <std_msgs/msg/header.hpp>
+#include <geometry_msgs/msg/vector3.hpp>
+#include <marine_acoustic_msgs/msg/raw_sonar_image.hpp>
+#include <marine_acoustic_msgs/msg/projected_sonar_image.hpp>
 
 // Gemini SDK GLF structures
 #include "types.h"
@@ -39,9 +43,16 @@ namespace PingFlags
 /// Ping frequency modes
 enum class FrequencyMode : uint8_t
 {
-    LOW_FREQUENCY  = 0,  ///< 0 = LF mode
+    LOW_FREQUENCY  = 0,  ///< 0 = LF mode (720kHz for 1200ik)
     HIGH_FREQUENCY = 1   ///< 1 = HF mode (1200kHz for 1200ik)
 };
+
+/// Frequency resolution constants in meters
+namespace FrequencyResolution1200ikd
+{
+    constexpr double RES_720KHZ  = 0.0024;   ///< 720kHz frequency resolution (2.4mm)
+    constexpr double RES_1200KHZ = 0.0040;   ///< 1200kHz frequency resolution (4.0mm)
+}
 
 /// Speed of sound source modes
 enum class SoSMode : uint8_t
@@ -141,24 +152,70 @@ bool isCompressed(const GLF::GMainImage& mainImage);
 bool decompress(GLF::GMainImage& mainImage);
 
 /**
- * @brief Print diagnostic information for a single ping
+ * @brief Calculate the sample rate (time between range bins) in seconds
  * 
- * Logs detailed information about ping data to verify correct parsing:
- * - Dimensions (beams, samples)
- * - Bearing angles (first 10 beams)
- * - Sample intensity values from multiple positions
- * - Data indexing verification
- * 
- * @param mainImage GLF main image structure from SDK (for SDK bearing table inspection)
+ * @param mainImage GLF main image structure from SDK
  * @param metadata Extracted ping metadata
- * @param beam_data Extracted beam data
- * @param logger ROS2 logger for output
+ * @return Sample rate in seconds
+ */    
+double calculateSampleRate(
+    const GLF::GMainImage& mainImage,
+    const PingMetadata& metadata);
+
+/**
+ * @brief Create PingInfo message from conversion parameters
+ * 
+ * @param metadata Extracted ping metadata
+ * @return marine_acoustic_msgs::msg::PingInfo Filled ping info message
  */
-void printPingDiagnostics(
+marine_acoustic_msgs::msg::PingInfo createPingInfo(
+    const PingMetadata& metadata);
+
+/**
+ * @brief Create SonarImageData message from beam data (OPTIMIZED)
+ * 
+ * Uses BeamData.flat_data which is already in row-major (beam-major) format.
+ * This is the zero-copy approach - direct assignment from GLF SDK data.
+ * 
+ * @param beam_data BeamData structure with flat_data already in correct format
+ * @param metadata Ping metadata for beam count
+ * @param dtype Data type for the image (DTYPE_UINT8 for Gemini)
+ * @return marine_acoustic_msgs::msg::SonarImageData Filled sonar image data message
+ */
+marine_acoustic_msgs::msg::SonarImageData createSonarImageData(
+    const BeamData& beam_data,
+    const PingMetadata& metadata,
+    uint8_t dtype);
+
+/**
+ * @brief Create marine_acoustic_msgs/RawSonarImage from parsed GLF data
+ * 
+ * @param mainImage GLF main image structure from SDK
+ * @param metadata Extracted ping metadata
+ * @param beam_data Extracted beam data with bearing angles
+ * @param frame_id TF frame ID for the sonar
+ * @return marine_acoustic_msgs::msg::RawSonarImage Complete raw sonar image message
+ */
+marine_acoustic_msgs::msg::RawSonarImage createRawSonarImage(
     const GLF::GMainImage& mainImage,
     const PingMetadata& metadata,
     const BeamData& beam_data,
-    rclcpp::Logger logger);
+    const std::string& frame_id);
+
+/**
+ * @brief Create marine_acoustic_msgs/ProjectedSonarImage (spatial domain)
+ * 
+ * @param mainImage GLF main image structure from SDK
+ * @param metadata Extracted ping metadata
+ * @param beam_data Extracted beam data with bearing angles
+ * @param frame_id TF frame ID for the sonar
+ * @return marine_acoustic_msgs::msg::ProjectedSonarImage Complete projected sonar image message
+ */
+marine_acoustic_msgs::msg::ProjectedSonarImage createProjectedSonarImage(
+    const GLF::GMainImage& mainImage,
+    const PingMetadata& metadata,
+    const BeamData& beam_data,
+    const std::string& frame_id);
 
 } // namespace glf_processor
 

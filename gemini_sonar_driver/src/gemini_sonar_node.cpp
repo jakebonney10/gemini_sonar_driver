@@ -273,8 +273,9 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     
     // Log ping information periodically
     if (ping_number_ <= 5 || ping_number_ % 50 == 0) {
+        const char* freq_mode = (metadata.ping_flags & glf_processor::PingFlags::FREQUENCY_MASK) ? "LF:720kHz" : "HF:1200kHz";
         RCLCPP_INFO(this->get_logger(),
-            "Ping %u: beams=%u samples=%u range=[%u-%u] bearing=[%u-%u] freq=%.1fkHz sos=%.1fm/s aperture=%.1f gain=%d%% chirp=%s",
+            "Ping %u: beams=%u samples=%u range=[%u-%u] bearing=[%u-%u] freq=%.1fkHz(%s) sos=%.1fm/s aperture=%.1f° gain=%d%% chirp=%s",
             metadata.ping_number,
             metadata.num_beams,
             metadata.samples_per_beam,
@@ -283,6 +284,7 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
             metadata.start_bearing_deg,
             metadata.end_bearing_deg,
             metadata.frequency_khz,
+            freq_mode,
             metadata.sound_speed_ms,
             metadata.beam_aperture_deg,
             metadata.gain_percent,
@@ -292,14 +294,20 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     // Extract beam data
     glf_processor::BeamData beam_data = glf_processor::extractBeamData(mainImage, metadata);
     
-    // Print detailed diagnostics for first ping
-    if (ping_number_ == 1) {
-        glf_processor::printPingDiagnostics(mainImage, metadata, beam_data, this->get_logger());
+    // Validate beam data before publishing
+    if (beam_data.flat_data.empty() || beam_data.bearing_angles_rad.empty()) {
+        RCLCPP_ERROR(this->get_logger(), 
+            "Failed to extract beam data for ping %u - missing data or bearing table", 
+            ping_number_);
+        return;
     }
     
-    // TODO: Publish marine_acoustic_msgs
-    // auto raw_msg = conversions::createRawSonarImage(beam_data.beams, conversion_params_, timestamp);
-    // publishers_.raw_sonar_image_->publish(*raw_msg);
+    // Create and publish ROS messages
+    auto raw_msg = glf_processor::createRawSonarImage(mainImage, metadata, beam_data, parameters_.frame_id);
+    publishers_.raw_sonar_image_->publish(raw_msg);
+    
+    // auto projected_msg = glf_processor::createProjectedSonarImage(mainImage, metadata, beam_data, parameters_.frame_id);
+    // publishers_.projected_sonar_image_->publish(projected_msg);
     
     RCLCPP_DEBUG(this->get_logger(), "Processed ping %u with %zu beams", 
                  ping_number_, beam_data.beams.size());

@@ -58,7 +58,15 @@ BeamData extractBeamData(
     BeamData beam_data;
     
     // Validate pointers
-    if (!mainImage.m_vecData || !mainImage.m_vecBearingTable) {
+    if (!mainImage.m_vecData) {
+        RCLCPP_ERROR(rclcpp::get_logger("glf_processor"), 
+            "GLF data pointer (m_vecData) is null - cannot extract beam data");
+        return beam_data;  // Return empty
+    }
+    
+    if (!mainImage.m_vecBearingTable) {
+        RCLCPP_ERROR(rclcpp::get_logger("glf_processor"), 
+            "GLF bearing table pointer (m_vecBearingTable) is null - cannot extract beam angles");
         return beam_data;  // Return empty
     }
     
@@ -66,8 +74,19 @@ BeamData extractBeamData(
     const std::vector<double>& bearing_table = *mainImage.m_vecBearingTable;
     
     // Validate dimensions match
-    if (flat_data.size() != metadata.num_beams * metadata.samples_per_beam) {
+    const size_t expected_size = metadata.num_beams * metadata.samples_per_beam;
+    if (flat_data.size() != expected_size) {
+        RCLCPP_ERROR(rclcpp::get_logger("glf_processor"), 
+            "Data size mismatch: expected %zu bytes (%u beams × %u samples), got %zu bytes",
+            expected_size, metadata.num_beams, metadata.samples_per_beam, flat_data.size());
         return beam_data;  // Data size mismatch
+    }
+    
+    if (bearing_table.size() != metadata.num_beams) {
+        RCLCPP_ERROR(rclcpp::get_logger("glf_processor"), 
+            "Bearing table size mismatch: expected %u beams, got %zu angles",
+            metadata.num_beams, bearing_table.size());
+        return beam_data;  // Bearing table size mismatch
     }
     
     // Store raw flat data directly - OPTIMAL for ROS message packing!
@@ -139,129 +158,151 @@ bool decompress(GLF::GMainImage& mainImage)
     }
 }
 
-void printPingDiagnostics(
+double calculateSampleRate(
+    const GLF::GMainImage& mainImage,
+    const PingMetadata& metadata)
+{
+    // Sample rate (Hz) = c / (2 * delta_r)
+    const double c = metadata.sound_speed_ms;
+    const double delta_r = metadata.ping_flags & PingFlags::FREQUENCY_MASK ? FrequencyResolution1200ikd::RES_1200KHZ : FrequencyResolution1200ikd::RES_720KHZ;
+    
+    double sample_rate_hz = c / (2.0 * delta_r);
+    return sample_rate_hz;
+}
+
+marine_acoustic_msgs::msg::PingInfo createPingInfo(
+    const PingMetadata& metadata)
+{
+    marine_acoustic_msgs::msg::PingInfo ping_info;
+    
+    // Center frequency in Hz (convert from kHz)
+    double center_frequency_khz = (metadata.ping_flags & PingFlags::FREQUENCY_MASK) ? 720.0 : 1200.0;
+    ping_info.frequency = static_cast<float>(center_frequency_khz * 1000.0);
+
+    // Speed of sound in m/s
+    ping_info.sound_speed = static_cast<float>(metadata.sound_speed_ms);
+    
+    // Gemini doesn't report beamwidths in GLF data, leave empty
+    ping_info.tx_beamwidths.clear();
+    ping_info.rx_beamwidths.clear();
+    
+    return ping_info;
+}
+
+marine_acoustic_msgs::msg::SonarImageData createSonarImageData(
+    const BeamData& beam_data,
+    const PingMetadata& metadata,
+    uint8_t dtype)
+{
+    marine_acoustic_msgs::msg::SonarImageData sonar_image;
+    
+    // Set metadata
+    sonar_image.dtype = dtype;
+    sonar_image.beam_count = metadata.num_beams;
+    sonar_image.is_bigendian = false;  // x86_64 is little-endian
+
+    // Direct assignment of flat_data - already in row-major (beam-major) format
+    sonar_image.data = beam_data.flat_data;
+    
+    return sonar_image;
+}
+
+marine_acoustic_msgs::msg::RawSonarImage createRawSonarImage(
     const GLF::GMainImage& mainImage,
     const PingMetadata& metadata,
     const BeamData& beam_data,
-    rclcpp::Logger logger)
+    const std::string& frame_id)
 {
-    RCLCPP_INFO(logger, "=== PING DIAGNOSTICS ===");
-    RCLCPP_INFO(logger, "Ping #%u | Tx Time: %.6f s", 
-                metadata.ping_number, metadata.transmit_time_seconds);
+    using marine_acoustic_msgs::msg::RawSonarImage;
+    using marine_acoustic_msgs::msg::SonarImageData;
+
+    RawSonarImage msg;
+
+    // Header: transmit time from SDK
+    msg.header.frame_id = frame_id;
+    msg.header.stamp.sec = static_cast<int32_t>(metadata.transmit_time_seconds);
+    msg.header.stamp.nanosec = static_cast<uint32_t>((metadata.transmit_time_seconds - msg.header.stamp.sec) * 1e9);
+
+    // PingInfo (frequency, sound speed)
+    msg.ping_info = createPingInfo(metadata);
+
+    // Sample rate in Hz
+    msg.sample_rate = static_cast<float>(calculateSampleRate(mainImage, metadata));
     
-    // Dimensions
-    RCLCPP_INFO(logger, "Dimensions: %u beams × %u samples/beam = %zu total samples",
-                metadata.num_beams, metadata.samples_per_beam,
-                metadata.num_beams * metadata.samples_per_beam);
+    // Samples per beam
+    msg.samples_per_beam = metadata.samples_per_beam;
     
-    // Operating parameters
-    RCLCPP_INFO(logger, "Frequency: %.1f kHz | SOS: %.1f m/s | Gain: %d%% | Chirp: %s",
-                metadata.frequency_khz, metadata.sound_speed_ms,
-                metadata.gain_percent, metadata.chirp_enabled ? "ON" : "OFF");
-    
-    // Range window
-    RCLCPP_INFO(logger, "Range bins: [%u, %u] | Bearing: [%u, %u]",
-                metadata.start_range_bin, metadata.end_range_bin,
-                metadata.start_bearing_deg, metadata.end_bearing_deg);
-    
-    // Bearing angles (first 10 beams) - show actual values with precision
-    if (beam_data.bearing_angles_rad.size() >= 10) {
-        RCLCPP_INFO(logger, "First 10 bearing angles (from factory calibration):");
-        for (size_t i = 0; i < 10; ++i) {
-            double angle_deg = beam_data.bearing_angles_rad[i] * 180.0 / M_PI;
-            RCLCPP_INFO(logger, "  Beam[%zu]: %.3f°", i, angle_deg);
-        }
-        
-        // Show angular spacing between first two beams
-        if (beam_data.bearing_angles_rad.size() >= 2) {
-            double spacing = (beam_data.bearing_angles_rad[1] - beam_data.bearing_angles_rad[0]) * 180.0 / M_PI;
-            RCLCPP_INFO(logger, "Angular spacing (beam 0->1): %.3f°", spacing);
-        }
+    // First valid range bin (sample0)
+    msg.sample0 = metadata.start_range_bin;
+
+    // Gemini doesn't use per-beam TX steering delays - leave empty
+    msg.tx_delays.clear();
+
+    // Gemini doesn't have separate TX steering angles table - leave empty
+    msg.tx_angles.clear();
+
+    // RX angles = factory-calibrated bearing table (radians)
+    // Direct assignment - bearing_angles_rad is already in the correct format
+    msg.rx_angles.assign(
+        beam_data.bearing_angles_rad.begin(),
+        beam_data.bearing_angles_rad.end()
+    );
+
+    // Image payload: row-major, beam-major uint8
+    msg.image = createSonarImageData(beam_data, metadata, SonarImageData::DTYPE_UINT8);
+
+    return msg;
+}
+
+marine_acoustic_msgs::msg::ProjectedSonarImage createProjectedSonarImage(
+    const GLF::GMainImage& mainImage,
+    const PingMetadata& metadata,
+    const BeamData& beam_data,
+    const std::string& frame_id)
+{
+    using marine_acoustic_msgs::msg::ProjectedSonarImage;
+    using marine_acoustic_msgs::msg::SonarImageData;
+    using geometry_msgs::msg::Vector3;
+
+    ProjectedSonarImage msg;
+
+    // Header: transmit time from SDK
+    msg.header.frame_id = frame_id;
+    msg.header.stamp.sec = static_cast<int32_t>(metadata.transmit_time_seconds);
+    msg.header.stamp.nanosec = static_cast<uint32_t>((metadata.transmit_time_seconds - msg.header.stamp.sec) * 1e9);
+
+    // PingInfo (frequency, sound speed)
+    msg.ping_info = createPingInfo(metadata);
+
+    // Beam directions: unit vectors in sonar frame
+    // Convention: Z-forward, X-up, Y-right (consistent with NED for multibeam profilers)
+    // For 1D horizontal array: beams lie on Y-Z plane
+    // Zero azimuth is along Z-axis (straight out)
+    msg.beam_directions.resize(metadata.num_beams);
+    for (size_t b = 0; b < metadata.num_beams; ++b) {
+        double theta = beam_data.bearing_angles_rad[b]; // azimuth (rotation about X)
+
+        Vector3 v;
+        v.x = 0.0;                 // no elevation for 1D horizontal array
+        v.y = std::sin(theta);     // right/left (Y-axis)
+        v.z = std::cos(theta);     // forward (Z-axis)
+        msg.beam_directions[b] = v;
     }
-    
-    // Show raw SDK bearing table values to confirm they're in radians
-    if (mainImage.m_vecBearingTable && mainImage.m_vecBearingTable->size() >= 3) {
-        const std::vector<double>& sdk_bearing_table = *mainImage.m_vecBearingTable;
-        RCLCPP_INFO(logger, "SDK bearing table (radians): %.6f, %.6f, %.6f",
-                    sdk_bearing_table[0], sdk_bearing_table[1], sdk_bearing_table[2]);
-        RCLCPP_INFO(logger, "  = %.3f°, %.3f°, %.3f°",
-                    sdk_bearing_table[0] * 180.0 / M_PI,
-                    sdk_bearing_table[1] * 180.0 / M_PI,
-                    sdk_bearing_table[2] * 180.0 / M_PI);
+
+    // Ranges in meters: center of each range bin
+    // Computed from range resolution and start bin
+    const bool hf = (metadata.ping_flags & PingFlags::FREQUENCY_MASK) != 0;
+    const double dr = hf ? FrequencyResolution1200ikd::RES_1200KHZ : FrequencyResolution1200ikd::RES_720KHZ;
+
+    msg.ranges.resize(metadata.samples_per_beam);
+    for (size_t r = 0; r < metadata.samples_per_beam; ++r) {
+        msg.ranges[r] = static_cast<float>((metadata.start_range_bin + r) * dr);
     }
-    
-    // Verify data extraction by sampling multiple positions
-    if (!beam_data.beams.empty() && metadata.samples_per_beam > 0) {
-        RCLCPP_INFO(logger, "Sample intensity values (to verify indexing):");
-        
-        // Count non-zero samples for data quality check
-        size_t total_samples_checked = 0;
-        size_t non_zero_count = 0;
-        
-        // Sample from first beam
-        size_t beam_idx = 0;
-        if (beam_idx < beam_data.beams.size()) {
-            uint8_t near = beam_data.beams[beam_idx][0];
-            uint8_t mid = beam_data.beams[beam_idx][metadata.samples_per_beam / 2];
-            uint8_t far = beam_data.beams[beam_idx][metadata.samples_per_beam - 1];
-            
-            RCLCPP_INFO(logger, "  Beam 0: near[0]=%u mid[%u]=%u far[%u]=%u",
-                        near, metadata.samples_per_beam / 2, mid,
-                        metadata.samples_per_beam - 1, far);
-            
-            total_samples_checked += 3;
-            if (near > 0) non_zero_count++;
-            if (mid > 0) non_zero_count++;
-            if (far > 0) non_zero_count++;
-        }
-        
-        // Sample from middle beam
-        beam_idx = metadata.num_beams / 2;
-        if (beam_idx < beam_data.beams.size()) {
-            uint8_t near = beam_data.beams[beam_idx][0];
-            uint8_t mid = beam_data.beams[beam_idx][metadata.samples_per_beam / 2];
-            uint8_t far = beam_data.beams[beam_idx][metadata.samples_per_beam - 1];
-            
-            RCLCPP_INFO(logger, "  Beam %u (middle): near[0]=%u mid[%u]=%u far[%u]=%u",
-                        metadata.num_beams / 2, near,
-                        metadata.samples_per_beam / 2, mid,
-                        metadata.samples_per_beam - 1, far);
-            
-            total_samples_checked += 3;
-            if (near > 0) non_zero_count++;
-            if (mid > 0) non_zero_count++;
-            if (far > 0) non_zero_count++;
-        }
-        
-        // Sample from last beam
-        beam_idx = metadata.num_beams - 1;
-        if (beam_idx < beam_data.beams.size()) {
-            uint8_t near = beam_data.beams[beam_idx][0];
-            uint8_t mid = beam_data.beams[beam_idx][metadata.samples_per_beam / 2];
-            uint8_t far = beam_data.beams[beam_idx][metadata.samples_per_beam - 1];
-            
-            RCLCPP_INFO(logger, "  Beam %u (last): near[0]=%u mid[%u]=%u far[%u]=%u",
-                        metadata.num_beams - 1, near,
-                        metadata.samples_per_beam / 2, mid,
-                        metadata.samples_per_beam - 1, far);
-            
-            total_samples_checked += 3;
-            if (near > 0) non_zero_count++;
-            if (mid > 0) non_zero_count++;
-            if (far > 0) non_zero_count++;
-        }
-        
-        // Data quality warning
-        if (non_zero_count == 0) {
-            RCLCPP_WARN(logger, "⚠️  ALL sampled intensity values are ZERO - sonar likely out of water or no targets");
-        } else {
-            RCLCPP_INFO(logger, "Data quality: %zu/%zu samples non-zero (%.1f%%)",
-                        non_zero_count, total_samples_checked,
-                        100.0 * non_zero_count / total_samples_checked);
-        }
-    }
-    
-    RCLCPP_INFO(logger, "========================");
+
+    // Image payload (same as raw - row-major, beam-major uint8)
+    msg.image = createSonarImageData(beam_data, metadata, SonarImageData::DTYPE_UINT8);
+
+    return msg;
 }
 
 } // namespace glf_processor
