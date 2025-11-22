@@ -30,8 +30,8 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     node->declare_parameter("ping_interval_ms", ping_interval_ms);
     node->declare_parameter("ping_ext_trigger", ping_ext_trigger);
     node->declare_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
-    node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
-    node->declare_parameter("topics.sonar_detections", topics.sonar_detections);
+    // node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
+    // node->declare_parameter("topics.sonar_detections", topics.sonar_detections);
     node->declare_parameter("topics.raw_packet", topics.raw_packet);
     node->declare_parameter("topics.status", topics.status);
     node->declare_parameter("topics.logger_status", topics.logger_status);
@@ -54,8 +54,8 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("ping_interval_ms", ping_interval_ms);
     node->get_parameter("ping_ext_trigger", ping_ext_trigger);
     node->get_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
-    node->get_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
-    node->get_parameter("topics.sonar_detections", topics.sonar_detections);
+    // node->get_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
+    // node->get_parameter("topics.sonar_detections", topics.sonar_detections);
     node->get_parameter("topics.raw_packet", topics.raw_packet);
     node->get_parameter("topics.status", topics.status);
     node->get_parameter("topics.logger_status", topics.logger_status);
@@ -70,11 +70,11 @@ void GeminiSonarNode::Publishers::init(GeminiSonarNode* node)
     raw_sonar_image_ = node->create_publisher<marine_acoustic_msgs::msg::RawSonarImage>(
         node->parameters_.topics.raw_sonar_image, 10);
     
-    projected_sonar_image_ = node->create_publisher<marine_acoustic_msgs::msg::ProjectedSonarImage>(
-        node->parameters_.topics.projected_sonar_image, 10);
+    // projected_sonar_image_ = node->create_publisher<marine_acoustic_msgs::msg::ProjectedSonarImage>(
+    //     node->parameters_.topics.projected_sonar_image, 10);
     
-    sonar_detections_ = node->create_publisher<marine_acoustic_msgs::msg::SonarDetections>(
-        node->parameters_.topics.sonar_detections, 10);
+    // sonar_detections_ = node->create_publisher<marine_acoustic_msgs::msg::SonarDetections>(
+    //     node->parameters_.topics.sonar_detections, 10);
     
     raw_packet_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::RawPacket>(
         node->parameters_.topics.raw_packet, 10);
@@ -283,7 +283,7 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
             metadata.end_range_bin,
             metadata.start_bearing_deg,
             metadata.end_bearing_deg,
-            metadata.frequency_khz,
+            metadata.modulation_frequency_khz,
             freq_mode,
             metadata.sound_speed_ms,
             metadata.beam_aperture_deg,

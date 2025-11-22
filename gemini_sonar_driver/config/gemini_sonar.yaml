@@ -27,6 +27,6 @@
     # Topic Names
     topics:
       raw_sonar_image: "gemini/raw_sonar_image"
-      projected_sonar_image: "gemini/projected_sonar"
-      sonar_detections: "gemini/detections"
+      # projected_sonar_image: "gemini/projected_sonar"
+      # sonar_detections: "gemini/detections"
       raw_packet: "gemini/raw"

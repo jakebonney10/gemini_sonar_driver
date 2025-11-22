@@ -81,7 +81,7 @@ struct PingMetadata
     uint32_t end_bearing_deg = 0;            ///< End bearing angle
     
     // Operating parameters
-    double frequency_khz = 0.0;              ///< Modulation frequency (kHz)
+    double modulation_frequency_khz = 0.0;              ///< Modulation frequency (kHz)
     double sound_speed_ms = 0.0;             ///< Sound speed at transducer (m/s)
     double beam_aperture_deg = 0.0;          ///< Beamforming aperture angle
     int16_t gain_percent = 0;                ///< Receiver gain (%)

@@ -32,7 +32,7 @@ PingMetadata extractPingMetadata(
     meta.end_bearing_deg = mainImage.m_uiEndBearing;
     
     // Operating parameters
-    meta.frequency_khz = mainImage.m_uiModulationFrequency / 1000.0;
+    meta.modulation_frequency_khz = mainImage.m_uiModulationFrequency / 1000.0;
     meta.sound_speed_ms = mainImage.m_fSosAtXd;
     meta.beam_aperture_deg = mainImage.m_fBeamFormAperture;
     meta.gain_percent = mainImage.m_sPercentGain;
