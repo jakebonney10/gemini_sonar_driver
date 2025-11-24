@@ -50,8 +50,8 @@ enum class FrequencyMode : uint8_t
 /// Frequency resolution constants in meters
 namespace FrequencyResolution1200ikd
 {
-    constexpr double RES_720KHZ  = 0.0024;   ///< 720kHz frequency resolution (2.4mm)
-    constexpr double RES_1200KHZ = 0.0040;   ///< 1200kHz frequency resolution (4.0mm)
+    constexpr double RES_720KHZ  = 0.0040;   ///< 720kHz frequency resolution (4.0mm)
+    constexpr double RES_1200KHZ = 0.0024;   ///< 1200kHz frequency resolution (2.4mm)
 }
 
 /// Speed of sound source modes
@@ -81,6 +81,7 @@ struct PingMetadata
     uint32_t end_bearing_deg = 0;            ///< End bearing angle
     
     // Operating parameters
+    double center_frequency_khz = 0.0;       ///< Carrier frequency (720 or 1200 kHz) - ADD THIS!
     double modulation_frequency_khz = 0.0;              ///< Modulation frequency (kHz)
     double sound_speed_ms = 0.0;             ///< Sound speed at transducer (m/s)
     double beam_aperture_deg = 0.0;          ///< Beamforming aperture angle

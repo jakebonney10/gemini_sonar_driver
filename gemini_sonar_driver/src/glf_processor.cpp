@@ -1,5 +1,8 @@
 #include "gemini_sonar_driver/glf_processor.hpp"
 #include <cmath>
+#include <algorithm>
+#include <numeric>
+#include <array>
 
 NS_HEAD
 
@@ -32,6 +35,7 @@ PingMetadata extractPingMetadata(
     meta.end_bearing_deg = mainImage.m_uiEndBearing;
     
     // Operating parameters
+    meta.center_frequency_khz = (mainImage.m_usPingFlags & PingFlags::FREQUENCY_MASK) ? 720.0 : 1200.0;
     meta.modulation_frequency_khz = mainImage.m_uiModulationFrequency / 1000.0;
     meta.sound_speed_ms = mainImage.m_fSosAtXd;
     meta.beam_aperture_deg = mainImage.m_fBeamFormAperture;
@@ -72,6 +76,32 @@ BeamData extractBeamData(
     
     const std::vector<UInt8>& flat_data = *mainImage.m_vecData;
     const std::vector<double>& bearing_table = *mainImage.m_vecBearingTable;
+
+    // --- DEBUG: compute basic statistics of raw image data ---
+    // This helps determine whether values are low-amplitude (need stretching),
+    // whether data appear compressed, or if values are out of expected range.
+    if (!flat_data.empty()) {
+        auto min_it = std::min_element(flat_data.begin(), flat_data.end());
+        auto max_it = std::max_element(flat_data.begin(), flat_data.end());
+        double sum = std::accumulate(flat_data.begin(), flat_data.end(), 0ull);
+        double mean = sum / static_cast<double>(flat_data.size());
+        
+        // Count histogram bins to see data distribution
+        std::array<size_t, 256> histogram = {};
+        for (const auto& val : flat_data) {
+            histogram[val]++;
+        }
+        
+        // Count non-zero pixels
+        size_t nonzero_count = flat_data.size() - histogram[0];
+        double nonzero_pct = 100.0 * nonzero_count / flat_data.size();
+        
+        RCLCPP_INFO(rclcpp::get_logger("glf_processor"),
+            "GLF data stats: samples=%zu min=%u max=%u mean=%.2f gain=%d range_comp=%u nonzero=%.1f%%",
+            flat_data.size(), static_cast<unsigned>(*min_it), static_cast<unsigned>(*max_it), mean,
+            static_cast<int>(mainImage.m_sPercentGain), static_cast<unsigned>(mainImage.m_usRangeCompUsed),
+            nonzero_pct);
+    }
     
     // Validate dimensions match
     const size_t expected_size = metadata.num_beams * metadata.samples_per_beam;
@@ -164,8 +194,8 @@ double calculateSampleRate(
 {
     // Sample rate (Hz) = c / (2 * delta_r)
     const double c = metadata.sound_speed_ms;
-    const double delta_r = metadata.ping_flags & PingFlags::FREQUENCY_MASK ? FrequencyResolution1200ikd::RES_1200KHZ : FrequencyResolution1200ikd::RES_720KHZ;
-    
+    const double delta_r = (metadata.center_frequency_khz == 1200.0) ?
+        FrequencyResolution1200ikd::RES_1200KHZ : FrequencyResolution1200ikd::RES_720KHZ;    
     double sample_rate_hz = c / (2.0 * delta_r);
     return sample_rate_hz;
 }
@@ -176,8 +206,7 @@ marine_acoustic_msgs::msg::PingInfo createPingInfo(
     marine_acoustic_msgs::msg::PingInfo ping_info;
     
     // Center frequency in Hz (convert from kHz)
-    double center_frequency_khz = (metadata.ping_flags & PingFlags::FREQUENCY_MASK) ? 720.0 : 1200.0;
-    ping_info.frequency = static_cast<float>(center_frequency_khz * 1000.0);
+    ping_info.frequency = static_cast<float>(metadata.center_frequency_khz * 1000.0);
 
     // Speed of sound in m/s
     ping_info.sound_speed = static_cast<float>(metadata.sound_speed_ms);
