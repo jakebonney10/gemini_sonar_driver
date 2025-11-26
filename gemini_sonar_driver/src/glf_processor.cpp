@@ -78,32 +78,6 @@ BeamData extractBeamData(
     
     const std::vector<UInt8>& flat_data = *mainImage.m_vecData;
     const std::vector<double>& bearing_table = *mainImage.m_vecBearingTable;
-
-    // --- DEBUG: compute basic statistics of raw image data ---
-    // This helps determine whether values are low-amplitude (need stretching),
-    // whether data appear compressed, or if values are out of expected range.
-    if (!flat_data.empty()) {
-        auto min_it = std::min_element(flat_data.begin(), flat_data.end());
-        auto max_it = std::max_element(flat_data.begin(), flat_data.end());
-        double sum = std::accumulate(flat_data.begin(), flat_data.end(), 0ull);
-        double mean = sum / static_cast<double>(flat_data.size());
-        
-        // Count histogram bins to see data distribution
-        std::array<size_t, 256> histogram = {};
-        for (const auto& val : flat_data) {
-            histogram[val]++;
-        }
-        
-        // Count non-zero pixels
-        size_t nonzero_count = flat_data.size() - histogram[0];
-        double nonzero_pct = 100.0 * nonzero_count / flat_data.size();
-        
-        RCLCPP_INFO(rclcpp::get_logger("glf_processor"),
-            "GLF data stats: samples=%zu min=%u max=%u mean=%.2f gain=%d range_comp=%u nonzero=%.1f%%",
-            flat_data.size(), static_cast<unsigned>(*min_it), static_cast<unsigned>(*max_it), mean,
-            static_cast<int>(mainImage.m_sPercentGain), static_cast<unsigned>(mainImage.m_usRangeCompUsed),
-            nonzero_pct);
-    }
     
     // Validate dimensions match
     const size_t expected_size = metadata.num_beams * metadata.samples_per_beam;
