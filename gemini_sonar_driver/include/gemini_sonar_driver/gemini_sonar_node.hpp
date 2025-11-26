@@ -2,7 +2,7 @@
 
 // Local package includes
 #include "package_defs.hpp"
-#include "gemini_sonar_driver/conversions.hpp"
+#include "gemini_sonar_driver/glf_processor.hpp"
 
 // ROS2 includes
 #include <rclcpp/rclcpp.hpp>
@@ -82,7 +82,9 @@ public:
         int sound_speed_ms = 1500;                        ///< Sound speed in m/s
         bool sound_speed_manual = false;                  ///< Sound speed mode: true=manual, false=auto (uses sonar SOS sensor)
         int chirp_mode = 2;                               ///< Chirp mode: 0=disabled, 1=enabled, 2=auto
-        bool high_resolution = true;                      ///< High resolution mode (1200ik only): true=1200kHz, false=720kHz
+        bool high_resolution = true;                      ///< High resolution mode (1200ik only)
+        int frequency_mode = 0;                           ///< Frequency selection: 0=auto, 1=low(720kHz), 2=high(1200kHz), 3=combined
+        double frequency_auto_threshold_m = 40.0;         ///< Threshold (m) for auto mode to switch LF/HF (1-50m valid)
         
         // Ping mode
         bool ping_free_run = false;                       ///< Ping mode: true=continuous, false=interval-based
@@ -92,8 +94,8 @@ public:
         struct Topics
         {
             std::string raw_sonar_image = "gemini/raw_sonar_image";           ///< marine_acoustic_msgs/RawSonarImage
-            std::string projected_sonar_image = "gemini/projected_sonar";     ///< marine_acoustic_msgs/ProjectedSonarImage
-            std::string sonar_detections = "gemini/detections";               ///< marine_acoustic_msgs/SonarDetections
+            // std::string projected_sonar_image = "gemini/projected_sonar";     ///< marine_acoustic_msgs/ProjectedSonarImage
+            // std::string sonar_detections = "gemini/detections";               ///< marine_acoustic_msgs/SonarDetections
             std::string raw_packet = "gemini/raw";                            ///< Raw Gemini packets
             std::string status = "gemini/status";                             ///< Gemini device status
             std::string logger_status = "gemini/logger_status";               ///< Logger recording status
@@ -110,8 +112,8 @@ public:
     struct Publishers
     {
         rclcpp::Publisher<marine_acoustic_msgs::msg::RawSonarImage>::SharedPtr raw_sonar_image_;
-        rclcpp::Publisher<marine_acoustic_msgs::msg::ProjectedSonarImage>::SharedPtr projected_sonar_image_;
-        rclcpp::Publisher<marine_acoustic_msgs::msg::SonarDetections>::SharedPtr sonar_detections_;
+        // rclcpp::Publisher<marine_acoustic_msgs::msg::ProjectedSonarImage>::SharedPtr projected_sonar_image_;
+        // rclcpp::Publisher<marine_acoustic_msgs::msg::SonarDetections>::SharedPtr sonar_detections_;
         rclcpp::Publisher<gemini_sonar_driver_interfaces::msg::RawPacket>::SharedPtr raw_packet_;
         rclcpp::Publisher<gemini_sonar_driver_interfaces::msg::GeminiStatus>::SharedPtr status_;
         rclcpp::Publisher<gemini_sonar_driver_interfaces::msg::LoggerStatus>::SharedPtr logger_status_;
@@ -229,9 +231,6 @@ protected:
     Parameters parameters_;
     Publishers publishers_;
     Services services_;
-
-    // Conversion parameters for message creation
-    conversions::ConversionParameters conversion_params_;
 
     // SDK state
     std::atomic<bool> sonar_streaming_{false};
