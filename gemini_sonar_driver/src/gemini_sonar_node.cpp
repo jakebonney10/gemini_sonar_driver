@@ -25,15 +25,18 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     node->declare_parameter("sound_speed_ms", sound_speed_ms);
     node->declare_parameter("sound_speed_manual", sound_speed_manual);
     node->declare_parameter("high_resolution", high_resolution);
+    node->declare_parameter("frequency_mode", frequency_mode);
+    node->declare_parameter("frequency_auto_threshold_m", frequency_auto_threshold_m);
     node->declare_parameter("chirp_mode", chirp_mode);
     node->declare_parameter("ping_free_run", ping_free_run);
     node->declare_parameter("ping_interval_ms", ping_interval_ms);
     node->declare_parameter("ping_ext_trigger", ping_ext_trigger);
     node->declare_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
-    node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
-    node->declare_parameter("topics.sonar_detections", topics.sonar_detections);
+    // node->declare_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
+    // node->declare_parameter("topics.sonar_detections", topics.sonar_detections);
     node->declare_parameter("topics.raw_packet", topics.raw_packet);
     node->declare_parameter("topics.status", topics.status);
+    node->declare_parameter("topics.logger_status", topics.logger_status);
 }
 
 void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
@@ -49,14 +52,17 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("sound_speed_manual", sound_speed_manual);
     node->get_parameter("chirp_mode", chirp_mode);
     node->get_parameter("high_resolution", high_resolution);
+    node->get_parameter("frequency_mode", frequency_mode);
+    node->get_parameter("frequency_auto_threshold_m", frequency_auto_threshold_m);
     node->get_parameter("ping_free_run", ping_free_run);
     node->get_parameter("ping_interval_ms", ping_interval_ms);
     node->get_parameter("ping_ext_trigger", ping_ext_trigger);
     node->get_parameter("topics.raw_sonar_image", topics.raw_sonar_image);
-    node->get_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
-    node->get_parameter("topics.sonar_detections", topics.sonar_detections);
+    // node->get_parameter("topics.projected_sonar_image", topics.projected_sonar_image);
+    // node->get_parameter("topics.sonar_detections", topics.sonar_detections);
     node->get_parameter("topics.raw_packet", topics.raw_packet);
     node->get_parameter("topics.status", topics.status);
+    node->get_parameter("topics.logger_status", topics.logger_status);
 }
 
 //=============================================================================
@@ -68,17 +74,20 @@ void GeminiSonarNode::Publishers::init(GeminiSonarNode* node)
     raw_sonar_image_ = node->create_publisher<marine_acoustic_msgs::msg::RawSonarImage>(
         node->parameters_.topics.raw_sonar_image, 10);
     
-    projected_sonar_image_ = node->create_publisher<marine_acoustic_msgs::msg::ProjectedSonarImage>(
-        node->parameters_.topics.projected_sonar_image, 10);
+    // projected_sonar_image_ = node->create_publisher<marine_acoustic_msgs::msg::ProjectedSonarImage>(
+    //     node->parameters_.topics.projected_sonar_image, 10);
     
-    sonar_detections_ = node->create_publisher<marine_acoustic_msgs::msg::SonarDetections>(
-        node->parameters_.topics.sonar_detections, 10);
+    // sonar_detections_ = node->create_publisher<marine_acoustic_msgs::msg::SonarDetections>(
+    //     node->parameters_.topics.sonar_detections, 10);
     
     raw_packet_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::RawPacket>(
         node->parameters_.topics.raw_packet, 10);
 
     status_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::GeminiStatus>(
         node->parameters_.topics.status, 10);
+
+    logger_status_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::LoggerStatus>(
+        node->parameters_.topics.logger_status, 10);
 }
 
 //=============================================================================
@@ -229,8 +238,23 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
             processGLFImage(*image);
             break;
         }
+
+        case SequencerApi::LOGGER_REC_UPDATE:
+        {
+            const GLF::SOutputFileInfo* loggerInfo = reinterpret_cast<const GLF::SOutputFileInfo*>(value);
+            RCLCPP_DEBUG(this->get_logger(), "Received LOGGER_REC_UPDATE");
+            processLoggerRecUpdate(loggerInfo);
+            break;
+        }
+
+        case SequencerApi::FRAME_RATE:
+        {
+            unsigned int fps = *(unsigned int*)value;
+            RCLCPP_DEBUG(this->get_logger(), "Received FRAME_RATE message: %u", fps);
+            break;
+        }
             
-        // implement more message types as needed i.e LOGGER_REC_UPDATE (type 4), FRAME_RATE (type 10) SENSOR_RECORD, etc.
+        // implement more message types as needed i.e FRAME_RATE (type 10) SENSOR_RECORD, etc.
             
         default:
             RCLCPP_WARN(this->get_logger(), "Received unhandled Svs5 message type: %u", messageType);
@@ -245,59 +269,51 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     ping_number_++;
     rclcpp::Time timestamp = this->now();
     
-    // Extract image data from GLF structure
+    // Extract main image from GLF structure
     const GLF::GMainImage& mainImage = image.m_mainImage;
     
-    // Get image dimensions
-    const std::vector<UInt8>* imageData = mainImage.m_vecData;
-    const std::vector<double>* bearingTable = mainImage.m_vecBearingTable;
+    // Extract ping metadata
+    glf_processor::PingMetadata metadata = glf_processor::extractPingMetadata(mainImage, ping_number_);
     
-    // Calculate dimensions
-    size_t num_beams = bearingTable->size();
-    size_t total_samples = imageData->size();
-    size_t samples_per_beam = (num_beams > 0) ? (total_samples / num_beams) : 0;
-    
-    RCLCPP_DEBUG(this->get_logger(), 
-                 "GLF Image: beams=%zu, samples_per_beam=%zu, total=%zu bytes",
-                 num_beams, samples_per_beam, total_samples);
-
-    if (ping_number_ <= 5 || ping_number_ % 50 == 0)
-    {
+    // Log ping information periodically
+    if (ping_number_ <= 5 || ping_number_ % 50 == 0) {
         RCLCPP_INFO(this->get_logger(),
-            "Ping %u: start_range=%u end_range=%u start_bearing=%u end_bearing=%u compression=%u sos=%.1f freq=%.1f",
-            ping_number_,
-            mainImage.m_uiStartRange,
-            mainImage.m_uiEndRange,
-            mainImage.m_uiStartBearing,
-            mainImage.m_uiEndBearing,
-            mainImage.m_usCompressionType,
-            mainImage.m_fSosAtXd,
-            mainImage.m_uiModulationFrequency / 1000.0);
+            "Ping %u: beams=%u samples=%u range=[%u-%u] bearing=[%u-%u] center_freq=%.0fkHz mod_freq=%.1fkHz sos=%.1fm/s aperture=%.1f° gain=%d%% chirp=%s",
+            metadata.ping_number,
+            metadata.num_beams,
+            metadata.samples_per_beam,
+            metadata.start_range_bin,
+            metadata.end_range_bin,
+            metadata.start_bearing_deg,
+            metadata.end_bearing_deg,
+            metadata.center_frequency_khz,
+            metadata.modulation_frequency / 1000.0,
+            metadata.sound_speed_ms,
+            metadata.beam_aperture_deg,
+            metadata.gain_percent,
+            metadata.chirp_enabled ? "ON" : "OFF");
     }
     
-    // Update conversion parameters from GLF metadata
-    conversion_params_.frame_id = parameters_.frame_id;
-    conversion_params_.num_beams = num_beams;
-    conversion_params_.bins_per_beam = samples_per_beam;
-    conversion_params_.frequency_khz = mainImage.m_uiModulationFrequency / 1000.0;
-    conversion_params_.sound_speed_ms = mainImage.m_fSosAtXd;
-    conversion_params_.start_sample = mainImage.m_uiStartRange;
+    // Extract beam data
+    glf_processor::BeamData beam_data = glf_processor::extractBeamData(mainImage, metadata);
     
-    // Publish msgs using the conversions module
-    // auto raw_msg = conversions::createRawSonarImage(beam_data, conversion_params_, timestamp);
-    // publishers_.raw_sonar_image_->publish(*raw_msg);
+    // Validate beam data before publishing
+    if (beam_data.flat_data.empty() || beam_data.bearing_angles_rad.empty()) {
+        RCLCPP_ERROR(this->get_logger(), 
+            "Failed to extract beam data for ping %u - missing data or bearing table", 
+            ping_number_);
+        return;
+    }
     
-    // auto detections_msg = conversions::createSonarDetections(beam_data, conversion_params_, timestamp);
-    // publishers_.sonar_detections_->publish(*detections_msg);
+    // Create and publish ROS messages
+    auto raw_msg = glf_processor::createRawSonarImage(mainImage, metadata, beam_data, parameters_.frame_id);
+    publishers_.raw_sonar_image_->publish(raw_msg);
     
-    // Publish projected image periodically (every 10 pings)
-    // if (ping_number_ % 10 == 0)
-    // {
-    //     auto proj_msg = conversions::createProjectedSonarImage(beam_data, conversion_params_, timestamp);
-    //     publishers_.projected_sonar_image_->publish(*proj_msg);
-    // }
+    // auto projected_msg = glf_processor::createProjectedSonarImage(mainImage, metadata, beam_data, parameters_.frame_id);
+    // publishers_.projected_sonar_image_->publish(projected_msg);
     
-    RCLCPP_DEBUG(this->get_logger(), "Published ping %u", ping_number_);
+    RCLCPP_DEBUG(this->get_logger(), "Processed ping %u with %zu beams", 
+                 ping_number_, beam_data.beams.size());
 }
 
 void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus)
@@ -343,6 +359,23 @@ void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus
 
     publishers_.status_->publish(status_msg);
 
+}
+
+void GeminiSonarNode::processLoggerRecUpdate(const GLF::SOutputFileInfo* loggerInfo)
+{
+    if (!loggerInfo) return;
+    
+    gemini_sonar_driver_interfaces::msg::LoggerStatus logger_msg;
+    logger_msg.header.stamp = this->now();
+    logger_msg.header.frame_id = parameters_.frame_id;
+    logger_msg.file_name = loggerInfo->m_strFileName;
+    logger_msg.number_of_records = loggerInfo->m_uiNumberOfRecords;
+    logger_msg.file_size_bytes = loggerInfo->m_fileSizeBytes;
+    logger_msg.disk_space_free_bytes = loggerInfo->m_diskSpaceFreeBytes;
+    logger_msg.percent_disk_space_free = loggerInfo->m_percentDiskSpaceFree;
+    logger_msg.recording_time_left_secs = loggerInfo->m_recordingTimeLeftSecs;
+
+    publishers_.logger_status_->publish(logger_msg);
 }
 
 //=============================================================================
@@ -422,6 +455,10 @@ bool GeminiSonarNode::configureSonar()
     RCLCPP_INFO(this->get_logger(), "  Sound Speed Mode: %s", parameters_.sound_speed_manual ? "MANUAL" : "AUTO (using sonar SOS sensor)");
     RCLCPP_INFO(this->get_logger(), "  Chirp Mode: %d (0=disabled, 1=enabled, 2=auto)", parameters_.chirp_mode);
     RCLCPP_INFO(this->get_logger(), "  High Resolution: %s (1200ik enhanced range detail)", parameters_.high_resolution ? "ENABLED" : "DISABLED");
+    RCLCPP_INFO(this->get_logger(), "  Frequency Mode: %d (0=auto, 1=low, 2=high, 3=combined)", parameters_.frequency_mode);
+    if (parameters_.frequency_mode == 0) {
+        RCLCPP_INFO(this->get_logger(), "  Auto Frequency Threshold: %.1f m (switch LF/HF)", parameters_.frequency_auto_threshold_m);
+    }
     RCLCPP_INFO(this->get_logger(), "  Ping Mode: %s", parameters_.ping_free_run ? "Free-running (continuous)" : "Interval-based");
     if (!parameters_.ping_free_run) {
         RCLCPP_INFO(this->get_logger(), "  Ping Interval: %d ms (%.1f Hz)", 
@@ -430,7 +467,43 @@ bool GeminiSonarNode::configureSonar()
     if (parameters_.ping_ext_trigger) {
         RCLCPP_INFO(this->get_logger(), "  External TTL Trigger: ENABLED");
     }
+
+    // Configure cpu performance level i.e. image quality or num_beams (LOW_CPU, MEDIUM_CPU, HIGH_CPU, UL_HIGH_CPU)
+    SequencerApi::SonarImageQualityLevel qualityLevel;
+    qualityLevel.m_performance = SequencerApi::HIGH_CPU; // default to high performance mode TODO: make param
+    qualityLevel.m_screenPixels = 2048; // 2048 means highest quality (512,1024) TODO: make param
+    setSdkParameter(SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE, sizeof(SequencerApi::SonarImageQualityLevel),
+                   &qualityLevel, "performance level");
+
+    // Configure high resolution mode
+    bool highRes = parameters_.high_resolution;
+    setSdkParameter(SequencerApi::SVS5_CONFIG_HIGH_RESOLUTION, sizeof(bool), 
+                   &highRes, "high resolution");
+
+    // Configure frequency selection (RangeFrequencyConfig)
+    RangeFrequencyConfig rangeConfig; // from GeminiStructuresPublic.h
+    double threshold = parameters_.frequency_auto_threshold_m;    // Validate and clamp threshold (only used in auto mode)
+    if (threshold < 1.0) threshold = 1.0; else if (threshold > 50.0) threshold = 50.0;
+    rangeConfig.m_rangeThreshold = threshold;
     
+    switch (parameters_.frequency_mode) {
+        case 1:
+            rangeConfig.m_frequency = FREQUENCY_LOW;
+            break;
+        case 2:
+            rangeConfig.m_frequency = FREQUENCY_HIGH;
+            break;
+        case 3:
+            rangeConfig.m_frequency = FREQUENCY_COMBINED;
+            break;
+        case 0:
+        default:
+            rangeConfig.m_frequency = FREQUENCY_AUTO;
+            break;
+    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_RANGE_RESOLUTION, sizeof(RangeFrequencyConfig),
+                   &rangeConfig, "range frequency config");
+
     // Configure range
     double range = parameters_.range_m;
     setSdkParameter(SequencerApi::SVS5_CONFIG_RANGE, sizeof(double), &range, "range");
@@ -450,11 +523,6 @@ bool GeminiSonarNode::configureSonar()
     setSdkParameter(SequencerApi::SVS5_CONFIG_SOUND_VELOCITY, sizeof(SequencerApi::SequencerSosConfig), 
                    &sosConfig, "sound velocity");
     
-    // Configure high resolution mode
-    bool highRes = parameters_.high_resolution;
-    setSdkParameter(SequencerApi::SVS5_CONFIG_HIGH_RESOLUTION, sizeof(bool), 
-                   &highRes, "high resolution");
-    
     // Configure chirp mode
     int chirpMode = parameters_.chirp_mode;
     setSdkParameter(SequencerApi::SVS5_CONFIG_CHIRP_MODE, sizeof(int), 
@@ -468,13 +536,6 @@ bool GeminiSonarNode::configureSonar()
     setSdkParameter(SequencerApi::SVS5_CONFIG_PING_MODE, sizeof(SequencerApi::SequencerPingMode),
                    &pingMode, "ping mode");
 
-    // Configure cpu performance level i.e. image quality or num_beams (LOW_CPU, MEDIUM_CPU, HIGH_CPU, UL_HIGH_CPU)
-    SequencerApi::SonarImageQualityLevel qualityLevel;
-    qualityLevel.m_performance = SequencerApi::HIGH_CPU; // default to high performance mode TODO: make param
-    qualityLevel.m_screenPixels = 2048; // 2048 means highest quality (512,1024) TODO: make param
-    setSdkParameter(SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE, sizeof(SequencerApi::SonarImageQualityLevel),
-                   &qualityLevel, "performance level");
-    
     return true;
 }
 
@@ -487,6 +548,7 @@ bool GeminiSonarNode::startPinging()
     }
     
     bool online = true;
+    configureSonar();
     setSdkParameter(SequencerApi::SVS5_CONFIG_ONLINE, sizeof(bool), &online, "online mode");
     
     sonar_streaming_ = true;

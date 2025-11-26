@@ -92,8 +92,8 @@ foreach(NODE_FILE ${NODES})
   ament_target_dependencies(${NODE_NAME} ${ROS_DEPENDS} ${EXTERNAL_DEPENDS_LIB})
   target_include_directories(${NODE_NAME} PRIVATE "include/${PROJECT_NAME}/")
   
-  # Link Gemini SDK libraries (Svs5SeqLib includes GeminiComms internally)
-  target_link_libraries(${NODE_NAME} Svs5SeqLib)
+  # Link Gemini SDK libraries (Svs5SeqLib includes GeminiComms, add GenesisSerializer for GLF processing)
+  target_link_libraries(${NODE_NAME} Svs5SeqLib GenesisSerializer)
 endforeach(NODE_FILE)
 
 

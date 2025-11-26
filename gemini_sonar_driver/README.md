@@ -115,6 +115,9 @@ ros2 bag record /gemini/sonar_image /gemini/projection
 
 ## Troubleshooting
 
+To run with verbosity output set to DEBUG use 
+```ros2 run gemini_sonar_driver gemini_sonar_node --ros-args --log-level gemini_sonar_driver:=debug```
+
 ### "Failed to initialize Gemini network"
 - Check that no other program is using the Gemini SDK
 - Verify sonar is powered and connected to network
