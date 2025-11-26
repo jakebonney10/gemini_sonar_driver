@@ -287,7 +287,7 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
             metadata.start_bearing_deg,
             metadata.end_bearing_deg,
             metadata.center_frequency_khz,
-            metadata.modulation_frequency_khz,
+            metadata.modulation_frequency / 1000.0,
             metadata.sound_speed_ms,
             metadata.beam_aperture_deg,
             metadata.gain_percent,
@@ -482,8 +482,7 @@ bool GeminiSonarNode::configureSonar()
 
     // Configure frequency selection (RangeFrequencyConfig)
     RangeFrequencyConfig rangeConfig; // from GeminiStructuresPublic.h
-    // Validate and clamp threshold (only used in auto mode)
-    double threshold = parameters_.frequency_auto_threshold_m;
+    double threshold = parameters_.frequency_auto_threshold_m;    // Validate and clamp threshold (only used in auto mode)
     if (threshold < 1.0) threshold = 1.0; else if (threshold > 50.0) threshold = 50.0;
     rangeConfig.m_rangeThreshold = threshold;
     

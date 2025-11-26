@@ -37,7 +37,7 @@ PingMetadata extractPingMetadata(
     // Operating parameters
     // Bit0 set => HIGH frequency (1200kHz) else LOW (720kHz) for Gemini 1200ikd
     meta.center_frequency_khz = (mainImage.m_usPingFlags & PingFlags::FREQUENCY_MASK) ? 1200.0 : 720.0;
-    meta.modulation_frequency_khz = mainImage.m_uiModulationFrequency / 1000.0;
+    meta.modulation_frequency = mainImage.m_uiModulationFrequency;
     meta.sound_speed_ms = mainImage.m_fSosAtXd;
     meta.beam_aperture_deg = mainImage.m_fBeamFormAperture;
     meta.gain_percent = mainImage.m_sPercentGain;
@@ -189,18 +189,6 @@ bool decompress(GLF::GMainImage& mainImage)
     }
 }
 
-double calculateSampleRate(
-    const GLF::GMainImage& mainImage,
-    const PingMetadata& metadata)
-{
-    // Sample rate (Hz) = c / (2 * delta_r)
-    const double c = metadata.sound_speed_ms;
-    const double delta_r = (metadata.center_frequency_khz == 1200.0) ?
-        FrequencyResolution1200ikd::RES_1200KHZ : FrequencyResolution1200ikd::RES_720KHZ;    
-    double sample_rate_hz = c / (2.0 * delta_r);
-    return sample_rate_hz;
-}
-
 marine_acoustic_msgs::msg::PingInfo createPingInfo(
     const PingMetadata& metadata)
 {
@@ -257,7 +245,7 @@ marine_acoustic_msgs::msg::RawSonarImage createRawSonarImage(
     msg.ping_info = createPingInfo(metadata);
 
     // Sample rate in Hz
-    msg.sample_rate = static_cast<float>(calculateSampleRate(mainImage, metadata));
+    msg.sample_rate = static_cast<float>(metadata.modulation_frequency);
     
     // Samples per beam
     msg.samples_per_beam = metadata.samples_per_beam;
@@ -320,9 +308,10 @@ marine_acoustic_msgs::msg::ProjectedSonarImage createProjectedSonarImage(
     }
 
     // Ranges in meters: center of each range bin
-    // Computed from range resolution and start bin
-    const bool hf = (metadata.ping_flags & PingFlags::FREQUENCY_MASK) != 0;
-    const double dr = hf ? FrequencyResolution1200ikd::RES_1200KHZ : FrequencyResolution1200ikd::RES_720KHZ;
+    // Calculate range resolution from the actual sample rate (modulation frequency)
+    // Δr = c / (2 * f_sample)
+    const double sample_rate_hz = metadata.modulation_frequency;
+    const double dr = metadata.sound_speed_ms / (2.0 * sample_rate_hz);
 
     msg.ranges.resize(metadata.samples_per_beam);
     for (size_t r = 0; r < metadata.samples_per_beam; ++r) {

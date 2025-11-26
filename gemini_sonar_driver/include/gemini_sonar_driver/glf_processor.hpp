@@ -81,8 +81,8 @@ struct PingMetadata
     uint32_t end_bearing_deg = 0;            ///< End bearing angle
     
     // Operating parameters
-    double center_frequency_khz = 0.0;       ///< Carrier frequency (720 or 1200 kHz) - ADD THIS!
-    double modulation_frequency_khz = 0.0;              ///< Modulation frequency (kHz)
+    double center_frequency_khz = 0.0;       ///< Carrier frequency (720 or 1200 kHz)
+    double modulation_frequency = 0.0;       ///< SAMPLE RATE of processed GLF data (kHz). This encodes the relationship between range setting and num samples. For 45m range with 1356 samples: ~22.6 kHz (33mm resolution)
     double sound_speed_ms = 0.0;             ///< Sound speed at transducer (m/s)
     double beam_aperture_deg = 0.0;          ///< Beamforming aperture angle
     int16_t gain_percent = 0;                ///< Receiver gain (%)
@@ -151,17 +151,6 @@ bool isCompressed(const GLF::GMainImage& mainImage);
  * @return true if decompression succeeded or not needed, false on error
  */
 bool decompress(GLF::GMainImage& mainImage);
-
-/**
- * @brief Calculate the sample rate (time between range bins) in seconds
- * 
- * @param mainImage GLF main image structure from SDK
- * @param metadata Extracted ping metadata
- * @return Sample rate in seconds
- */    
-double calculateSampleRate(
-    const GLF::GMainImage& mainImage,
-    const PingMetadata& metadata);
 
 /**
  * @brief Create PingInfo message from conversion parameters
