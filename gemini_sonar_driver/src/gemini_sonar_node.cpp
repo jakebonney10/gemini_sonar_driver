@@ -25,6 +25,8 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     node->declare_parameter("sound_speed_ms", sound_speed_ms);
     node->declare_parameter("sound_speed_manual", sound_speed_manual);
     node->declare_parameter("high_resolution", high_resolution);
+    node->declare_parameter("frequency_mode", frequency_mode);
+    node->declare_parameter("frequency_auto_threshold_m", frequency_auto_threshold_m);
     node->declare_parameter("chirp_mode", chirp_mode);
     node->declare_parameter("ping_free_run", ping_free_run);
     node->declare_parameter("ping_interval_ms", ping_interval_ms);
@@ -50,6 +52,8 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("sound_speed_manual", sound_speed_manual);
     node->get_parameter("chirp_mode", chirp_mode);
     node->get_parameter("high_resolution", high_resolution);
+    node->get_parameter("frequency_mode", frequency_mode);
+    node->get_parameter("frequency_auto_threshold_m", frequency_auto_threshold_m);
     node->get_parameter("ping_free_run", ping_free_run);
     node->get_parameter("ping_interval_ms", ping_interval_ms);
     node->get_parameter("ping_ext_trigger", ping_ext_trigger);
@@ -273,9 +277,8 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     
     // Log ping information periodically
     if (ping_number_ <= 5 || ping_number_ % 50 == 0) {
-        const char* freq_mode = (metadata.ping_flags & glf_processor::PingFlags::FREQUENCY_MASK) ? "LF:720kHz" : "HF:1200kHz";
         RCLCPP_INFO(this->get_logger(),
-            "Ping %u: beams=%u samples=%u range=[%u-%u] bearing=[%u-%u] freq=%.1fkHz(%s) sos=%.1fm/s aperture=%.1f° gain=%d%% chirp=%s",
+            "Ping %u: beams=%u samples=%u range=[%u-%u] bearing=[%u-%u] center_freq=%.0fkHz mod_freq=%.1fkHz sos=%.1fm/s aperture=%.1f° gain=%d%% chirp=%s",
             metadata.ping_number,
             metadata.num_beams,
             metadata.samples_per_beam,
@@ -283,8 +286,8 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
             metadata.end_range_bin,
             metadata.start_bearing_deg,
             metadata.end_bearing_deg,
+            metadata.center_frequency_khz,
             metadata.modulation_frequency_khz,
-            freq_mode,
             metadata.sound_speed_ms,
             metadata.beam_aperture_deg,
             metadata.gain_percent,
@@ -452,6 +455,10 @@ bool GeminiSonarNode::configureSonar()
     RCLCPP_INFO(this->get_logger(), "  Sound Speed Mode: %s", parameters_.sound_speed_manual ? "MANUAL" : "AUTO (using sonar SOS sensor)");
     RCLCPP_INFO(this->get_logger(), "  Chirp Mode: %d (0=disabled, 1=enabled, 2=auto)", parameters_.chirp_mode);
     RCLCPP_INFO(this->get_logger(), "  High Resolution: %s (1200ik enhanced range detail)", parameters_.high_resolution ? "ENABLED" : "DISABLED");
+    RCLCPP_INFO(this->get_logger(), "  Frequency Mode: %d (0=auto, 1=low, 2=high, 3=combined)", parameters_.frequency_mode);
+    if (parameters_.frequency_mode == 0) {
+        RCLCPP_INFO(this->get_logger(), "  Auto Frequency Threshold: %.1f m (switch LF/HF)", parameters_.frequency_auto_threshold_m);
+    }
     RCLCPP_INFO(this->get_logger(), "  Ping Mode: %s", parameters_.ping_free_run ? "Free-running (continuous)" : "Interval-based");
     if (!parameters_.ping_free_run) {
         RCLCPP_INFO(this->get_logger(), "  Ping Interval: %d ms (%.1f Hz)", 
@@ -460,7 +467,44 @@ bool GeminiSonarNode::configureSonar()
     if (parameters_.ping_ext_trigger) {
         RCLCPP_INFO(this->get_logger(), "  External TTL Trigger: ENABLED");
     }
+
+    // Configure cpu performance level i.e. image quality or num_beams (LOW_CPU, MEDIUM_CPU, HIGH_CPU, UL_HIGH_CPU)
+    SequencerApi::SonarImageQualityLevel qualityLevel;
+    qualityLevel.m_performance = SequencerApi::HIGH_CPU; // default to high performance mode TODO: make param
+    qualityLevel.m_screenPixels = 2048; // 2048 means highest quality (512,1024) TODO: make param
+    setSdkParameter(SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE, sizeof(SequencerApi::SonarImageQualityLevel),
+                   &qualityLevel, "performance level");
+
+    // Configure high resolution mode
+    bool highRes = parameters_.high_resolution;
+    setSdkParameter(SequencerApi::SVS5_CONFIG_HIGH_RESOLUTION, sizeof(bool), 
+                   &highRes, "high resolution");
+
+    // Configure frequency selection (RangeFrequencyConfig)
+    RangeFrequencyConfig rangeConfig; // from GeminiStructuresPublic.h
+    // Validate and clamp threshold (only used in auto mode)
+    double threshold = parameters_.frequency_auto_threshold_m;
+    if (threshold < 1.0) threshold = 1.0; else if (threshold > 50.0) threshold = 50.0;
+    rangeConfig.m_rangeThreshold = threshold;
     
+    switch (parameters_.frequency_mode) {
+        case 1:
+            rangeConfig.m_frequency = FREQUENCY_LOW;
+            break;
+        case 2:
+            rangeConfig.m_frequency = FREQUENCY_HIGH;
+            break;
+        case 3:
+            rangeConfig.m_frequency = FREQUENCY_COMBINED;
+            break;
+        case 0:
+        default:
+            rangeConfig.m_frequency = FREQUENCY_AUTO;
+            break;
+    }
+    setSdkParameter(SequencerApi::SVS5_CONFIG_RANGE_RESOLUTION, sizeof(RangeFrequencyConfig),
+                   &rangeConfig, "range frequency config");
+
     // Configure range
     double range = parameters_.range_m;
     setSdkParameter(SequencerApi::SVS5_CONFIG_RANGE, sizeof(double), &range, "range");
@@ -480,11 +524,6 @@ bool GeminiSonarNode::configureSonar()
     setSdkParameter(SequencerApi::SVS5_CONFIG_SOUND_VELOCITY, sizeof(SequencerApi::SequencerSosConfig), 
                    &sosConfig, "sound velocity");
     
-    // Configure high resolution mode
-    bool highRes = parameters_.high_resolution;
-    setSdkParameter(SequencerApi::SVS5_CONFIG_HIGH_RESOLUTION, sizeof(bool), 
-                   &highRes, "high resolution");
-    
     // Configure chirp mode
     int chirpMode = parameters_.chirp_mode;
     setSdkParameter(SequencerApi::SVS5_CONFIG_CHIRP_MODE, sizeof(int), 
@@ -498,13 +537,6 @@ bool GeminiSonarNode::configureSonar()
     setSdkParameter(SequencerApi::SVS5_CONFIG_PING_MODE, sizeof(SequencerApi::SequencerPingMode),
                    &pingMode, "ping mode");
 
-    // Configure cpu performance level i.e. image quality or num_beams (LOW_CPU, MEDIUM_CPU, HIGH_CPU, UL_HIGH_CPU)
-    SequencerApi::SonarImageQualityLevel qualityLevel;
-    qualityLevel.m_performance = SequencerApi::HIGH_CPU; // default to high performance mode TODO: make param
-    qualityLevel.m_screenPixels = 2048; // 2048 means highest quality (512,1024) TODO: make param
-    setSdkParameter(SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE, sizeof(SequencerApi::SonarImageQualityLevel),
-                   &qualityLevel, "performance level");
-    
     return true;
 }
 

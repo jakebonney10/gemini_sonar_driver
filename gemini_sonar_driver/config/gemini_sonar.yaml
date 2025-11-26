@@ -11,13 +11,15 @@
     log_directory: "/data/gemini"     # Directory to save GLF log files
     
     # Sonar Operation 
-    range_m: 5.0             # Range in meters (1-120m for 720kHz, 1-50m for 1200kHz)
-    gain_percent: 50.0        # Receiver gain 0-100%
-    aperture: 120.0           # Sonar aperture in degrees (Switch between: 120 or 65)
-    sound_speed_ms: 1500      # Sound speed in m/s
-    sound_speed_manual: true  # Sound speed mode: true=manual, false=auto (uses sonar SOS sensor)
-    high_resolution: true     # High resolution mode: true=1200kHz (recommended), false=720kHz
-    chirp_mode: 2             # Chirp mode: 0=disabled, 1=enabled, 2=auto (recommended)
+    range_m: 45.0                    # Range in meters (1-120m for 720kHz, 1-50m for 1200kHz)
+    gain_percent: 100.0              # Receiver gain 0-100%
+    aperture: 120.0                  # Sonar aperture in degrees (Switch between: 120 or 65)
+    sound_speed_ms: 1500             # Sound speed in m/s
+    sound_speed_manual: true         # Sound speed mode: true=manual, false=auto (uses sonar SOS sensor)
+    high_resolution: false           # High resolution mode (1200ik only)
+    frequency_mode: 0                # Frequency selection: 0=auto|1=low|2=high|3=combined (Gemini RangeFrequencyConfig)
+    frequency_auto_threshold_m: 40.0 # Threshold (m) for auto mode to switch LF/HF (1-50m valid)
+    chirp_mode: 2                    # Chirp mode: 0=disabled, 1=enabled, 2=auto (recommended)
     
     # Ping Mode 
     ping_free_run: false   # true=continuous (as fast as possible), false=interval-based

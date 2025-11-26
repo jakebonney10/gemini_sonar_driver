@@ -82,7 +82,9 @@ public:
         int sound_speed_ms = 1500;                        ///< Sound speed in m/s
         bool sound_speed_manual = false;                  ///< Sound speed mode: true=manual, false=auto (uses sonar SOS sensor)
         int chirp_mode = 2;                               ///< Chirp mode: 0=disabled, 1=enabled, 2=auto
-        bool high_resolution = true;                      ///< High resolution mode (1200ik only): true=1200kHz, false=720kHz
+        bool high_resolution = true;                      ///< High resolution mode (1200ik only)
+        int frequency_mode = 0;                           ///< Frequency selection: 0=auto, 1=low(720kHz), 2=high(1200kHz), 3=combined
+        double frequency_auto_threshold_m = 40.0;         ///< Threshold (m) for auto mode to switch LF/HF (1-50m valid)
         
         // Ping mode
         bool ping_free_run = false;                       ///< Ping mode: true=continuous, false=interval-based

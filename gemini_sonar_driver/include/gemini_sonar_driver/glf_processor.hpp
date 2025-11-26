@@ -36,7 +36,7 @@ namespace glf_processor
 /// Ping flags bit definitions
 namespace PingFlags
 {
-    constexpr uint16_t FREQUENCY_MASK = 0x0001;  ///< Bit 0: Frequency mode
+    constexpr uint16_t FREQUENCY_MASK = 0x0100;  ///< Bit 8: Frequency mode (1=High/1200kHz, 0=Low/720kHz)
     constexpr uint16_t SOS_MODE_MASK  = 0x8000;  ///< Bit 15: Speed of sound mode
 }
 

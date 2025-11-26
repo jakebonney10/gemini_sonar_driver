@@ -35,7 +35,8 @@ PingMetadata extractPingMetadata(
     meta.end_bearing_deg = mainImage.m_uiEndBearing;
     
     // Operating parameters
-    meta.center_frequency_khz = (mainImage.m_usPingFlags & PingFlags::FREQUENCY_MASK) ? 720.0 : 1200.0;
+    // Bit0 set => HIGH frequency (1200kHz) else LOW (720kHz) for Gemini 1200ikd
+    meta.center_frequency_khz = (mainImage.m_usPingFlags & PingFlags::FREQUENCY_MASK) ? 1200.0 : 720.0;
     meta.modulation_frequency_khz = mainImage.m_uiModulationFrequency / 1000.0;
     meta.sound_speed_ms = mainImage.m_fSosAtXd;
     meta.beam_aperture_deg = mainImage.m_fBeamFormAperture;
