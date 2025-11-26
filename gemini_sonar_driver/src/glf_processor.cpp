@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <numeric>
 #include <array>
+#include <cstddef>
 
 NS_HEAD
 
@@ -125,8 +126,9 @@ BeamData extractBeamData(
     beam_data.flat_data.assign(flat_data.begin(), flat_data.end());
     
     // Extract bearing angles from SDK's factory-calibrated bearing table
-    // The bearing table is in RADIANS and contains the actual beam angles
+    // The bearing table is in RADIANS and is in descending order so need to flip
     beam_data.bearing_angles_rad.assign(bearing_table.begin(), bearing_table.end());
+    std::reverse(beam_data.bearing_angles_rad.begin(), beam_data.bearing_angles_rad.end());
     
     // Also create 2D structure for algorithms that need per-beam access
     // (e.g., peak detection, filtering)
