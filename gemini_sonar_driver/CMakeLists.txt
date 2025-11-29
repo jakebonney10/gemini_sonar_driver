@@ -22,6 +22,7 @@ set(EXTERNAL_DEPENDS_LIB
 
   )
 
+set(GEMINI_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64)
 
 get_filename_component(PACKAGE_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 message("Creating Package: ${PACKAGE_NAME}")
@@ -66,14 +67,12 @@ file(GLOB NODES CONFIGURE_DEPENDS
 
 include_directories(
   include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/Svs5Seq
-  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/Gemini
-  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/GenesisSerializer
+  ${GEMINI_SDK_DIR}/include
+  ${GEMINI_SDK_DIR}/include/Svs5Seq
+  ${GEMINI_SDK_DIR}/include/Gemini
+  ${GEMINI_SDK_DIR}/include/GenesisSerializer
 )
 
-# Link Gemini SDK libraries (using bin/ directory for shared libraries)
-set(GEMINI_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64)
 link_directories(${GEMINI_SDK_DIR}/bin)
 
 ###########
