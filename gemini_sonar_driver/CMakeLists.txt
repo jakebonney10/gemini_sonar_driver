@@ -23,6 +23,7 @@ set(EXTERNAL_DEPENDS_LIB
   )
 
 set(GEMINI_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64)
+set(GEMINI_LIB_DIR ${GEMINI_SDK_DIR}/bin)
 
 get_filename_component(PACKAGE_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 message("Creating Package: ${PACKAGE_NAME}")
@@ -93,6 +94,10 @@ foreach(NODE_FILE ${NODES})
   
   # Link Gemini SDK libraries (Svs5SeqLib includes GeminiComms, add GenesisSerializer for GLF processing)
   target_link_libraries(${NODE_NAME} Svs5SeqLib GenesisSerializer)
+  set_target_properties(${NODE_NAME} PROPERTIES
+    BUILD_RPATH   "${GEMINI_LIB_DIR}"
+    INSTALL_RPATH "${GEMINI_LIB_DIR}"
+  )
 endforeach(NODE_FILE)
 
 
