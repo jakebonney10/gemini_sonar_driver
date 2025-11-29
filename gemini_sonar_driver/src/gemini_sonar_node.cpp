@@ -418,7 +418,7 @@ bool GeminiSonarNode::initializeGeminiSDK()
     };
     
     // Start the Svs5 library - auto-discovers sonars on the network
-    Svs5ErrorCode result = SequencerApi::StartSvs5(callback, false);
+    Svs5ErrorCode result = SequencerApi::StartSvs5(callback);
     
     if (result != SVS5_SEQUENCER_STATUS_OK)
     {
