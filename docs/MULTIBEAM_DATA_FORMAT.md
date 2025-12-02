@@ -80,16 +80,6 @@ std::vector<double>* m_vecBearingTable
 - **Order**: Index 0 = first beam angle, Index N = last beam angle
 - **Calibration**: Factory-calibrated angles (NOT uniformly spaced!)
 
-### Why Not Uniform?
-
-The bearing table contains **actual beamformed directions** accounting for:
-- Array geometry variations
-- Phase calibration
-- Steering angle corrections
-- Hardware imperfections
-
-**Never assume uniform spacing!** Always use the provided angles.
-
 ### Example Bearing Table
 
 For a 120° aperture with 5 beams:

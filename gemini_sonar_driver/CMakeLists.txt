@@ -22,6 +22,13 @@ set(EXTERNAL_DEPENDS_LIB
 
   )
 
+file(GLOB GEMINI_SDK_DIRS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/.." "${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v*")
+list(SORT GEMINI_SDK_DIRS)
+list(REVERSE GEMINI_SDK_DIRS)
+list(GET GEMINI_SDK_DIRS 0 GEMINI_SDK_VERSION_DIR)
+set(GEMINI_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../${GEMINI_SDK_VERSION_DIR}")
+message(STATUS "Auto-selected GeminiSDK: ${GEMINI_SDK_DIR}")
+set(GEMINI_LIB_DIR ${GEMINI_SDK_DIR}/bin)
 
 get_filename_component(PACKAGE_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
 message("Creating Package: ${PACKAGE_NAME}")
@@ -66,14 +73,12 @@ file(GLOB NODES CONFIGURE_DEPENDS
 
 include_directories(
   include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/Svs5Seq
-  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/Gemini
-  ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/include/GenesisSerializer
+  ${GEMINI_SDK_DIR}/include
+  ${GEMINI_SDK_DIR}/include/Svs5Seq
+  ${GEMINI_SDK_DIR}/include/Gemini
+  ${GEMINI_SDK_DIR}/include/GenesisSerializer
 )
 
-# Link Gemini SDK libraries (using bin/ directory for shared libraries)
-set(GEMINI_SDK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64)
 link_directories(${GEMINI_SDK_DIR}/bin)
 
 ###########
@@ -96,6 +101,8 @@ foreach(NODE_FILE ${NODES})
   target_link_libraries(${NODE_NAME} Svs5SeqLib GenesisSerializer)
 endforeach(NODE_FILE)
 
+# Get absolute path to SDK for environment hook
+get_filename_component(GEMINI_LIB_DIR_ABS "${GEMINI_LIB_DIR}" ABSOLUTE)
 
 message("  Installing: " ${EXECUTABLES})
 install(TARGETS
@@ -110,6 +117,15 @@ install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}/
 )
+
+# Create environment hook to add Gemini SDK to LD_LIBRARY_PATH
+# ubuntu 24.04 uses DT_RUNPATH instead of DT_RPATH, so we need to set LD_LIBRARY_PATH
+set(GEMINI_ENV_HOOK "${CMAKE_CURRENT_BINARY_DIR}/env_hook/gemini_sdk.sh")
+file(WRITE "${GEMINI_ENV_HOOK}"
+"# Automatically add Gemini SDK to LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=\"${GEMINI_LIB_DIR_ABS}:\$LD_LIBRARY_PATH\"
+")
+ament_environment_hooks("${GEMINI_ENV_HOOK}")
 
 #############
 ## testing ##
