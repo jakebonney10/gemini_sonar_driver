@@ -12,9 +12,9 @@ ROS2 driver for the Tritech Gemini 1200ikd multibeam imaging sonar.
 
 ## Dependencies
 
-- ROS2 Humble
+- ROS2 Humble or Jazzy
 - `marine_acoustic_msgs` package
-- Gemini SDK v2.0.41.0
+- Gemini SDK v2.0.41.0 (v2.0.39.0 should also work)
 
 ## Installation
 
@@ -24,6 +24,13 @@ Put gemini sdk in gemini_sonar_driver top level directory. Make sure to run `Ins
 cd ~/ros/rhody_ws
 colcon build --packages-select gemini_sonar_driver_interfaces gemini_sonar_driver
 source install/setup.bash
+```
+
+[NOTE!] For some reason on 24.04 and Jazzy the node fails to find the gemini SDK libs at runtime. I havent figured out how to fix this in the cmake build yet. If you manually source these in the terminal prior to running the node it termporaily fixes the problem. You could also add to .bashrc so it persists. 
+
+```bash
+export GEMINI_BIN="/path/to/ros_workspace/src/gemini_sonar_driver/GeminiSDK_v2.0.39.0_Ubuntu_24.04_x86_64/bin"
+export LD_LIBRARY_PATH="$GEMINI_BIN:$LD_LIBRARY_PATH"
 ```
 
 ## Configuration
