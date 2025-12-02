@@ -95,12 +95,10 @@ foreach(NODE_FILE ${NODES})
   
   # Link Gemini SDK libraries (Svs5SeqLib includes GeminiComms, add GenesisSerializer for GLF processing)
   target_link_libraries(${NODE_NAME} Svs5SeqLib GenesisSerializer)
-  set_target_properties(${NODE_NAME} PROPERTIES
-    BUILD_RPATH   "${GEMINI_LIB_DIR}"
-    INSTALL_RPATH "${GEMINI_LIB_DIR}"
-  )
 endforeach(NODE_FILE)
 
+# Get absolute path to SDK for environment hook
+get_filename_component(GEMINI_LIB_DIR_ABS "${GEMINI_LIB_DIR}" ABSOLUTE)
 
 message("  Installing: " ${EXECUTABLES})
 install(TARGETS
@@ -115,6 +113,15 @@ install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}/
 )
+
+# Create environment hook to add Gemini SDK to LD_LIBRARY_PATH
+# ubuntu 24.04 uses DT_RUNPATH instead of DT_RPATH, so we need to set LD_LIBRARY_PATH
+set(GEMINI_ENV_HOOK "${CMAKE_CURRENT_BINARY_DIR}/env_hook/gemini_sdk.sh")
+file(WRITE "${GEMINI_ENV_HOOK}"
+"# Automatically add Gemini SDK to LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=\"${GEMINI_LIB_DIR_ABS}:\$LD_LIBRARY_PATH\"
+")
+ament_environment_hooks("${GEMINI_ENV_HOOK}")
 
 #############
 ## testing ##
