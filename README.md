@@ -39,8 +39,10 @@ Edit `config/gemini_sonar.yaml` to configure sonar parameters:
 
 ```yaml
 sonar_id: 0              # Sonar ID on network (0 WORKS FOR ALL SONARS IF ID IS NOT KNOWN)
-range_m: 75.0            # Max range in meters
-gain_percent: 50.0       # Receiver gain 0-100%
+software_mode: "Evo"     # SDK mode (Evo/EvoC/SeaNet/SeaNetC)
+range_m: 5.0             # Max range in meters
+gain_percent: 100.0      # Receiver gain 0-100%
+sound_speed_ms: 1500     # Sound speed in m/s
 ```
 
 ## Usage
@@ -100,6 +102,8 @@ ros2 bag record /gemini/raw_sonar_image
 |-------|-------------|-------------|
 | `/gemini/raw_sonar_image` | `marine_acoustic_msgs/RawSonarImage` | Raw sonar data with beam angles and samples |
 | `/gemini/raw` | `gemini_sonar_driver_interfaces/RawPacket` | Raw Gemini SDK packets for debugging |
+| `/gemini/status` | `gemini_sonar_driver_interfaces/GeminiStatus` | Sonar status information |
+| `/gemini/logger_status` | `gemini_sonar_driver_interfaces/LoggerStatus` | Native GLF logger status |
 
 ## Services
 
@@ -114,8 +118,8 @@ ros2 bag record /gemini/raw_sonar_image
 |-----------|------|---------|-------------|
 | `sonar_id` | int | 0 | Sonar ID on network |
 | `software_mode` | string | "Evo" | SDK mode (Evo/EvoC/SeaNet/SeaNetC) |
-| `range_m` | double | 75.0 | Maximum range in meters |
-| `gain_percent` | double | 50.0 | Receiver gain 0-100% |
+| `range_m` | double | 5.0 | Maximum range in meters |
+| `gain_percent` | double | 100.0 | Receiver gain 0-100% |
 | `sound_speed_ms` | int | 1500 | Sound speed in m/s |
 
 ## Troubleshooting
