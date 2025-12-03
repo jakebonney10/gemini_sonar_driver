@@ -21,7 +21,8 @@ ROS2 driver for the Tritech Gemini 1200ikd multibeam imaging sonar.
 Put gemini sdk in gemini_sonar_driver top level directory. Make sure to run `InstallSDK.sh` to install the libs system wide.
 
 ```bash
-cd ~/ros/rhody_ws
+cd ~/your/ros/worskspace
+rosdep install --from-paths src -y --ignore-src
 colcon build --packages-select gemini_sonar_driver_interfaces gemini_sonar_driver
 source install/setup.bash
 ```
@@ -71,9 +72,11 @@ ros2 service call /gemini/stop_sonar gemini_sonar_driver_interfaces/srv/StopSona
 
 ### Monitor Topics
 
-You can use acoustic_msgs_tools acoustic_image_view to visualisze raw_sonar_image msgs. 
+You can use `acoustic_image_view` from the [acoustic_msgs_tools](https://github.com/k2oceanic/acoustic_msgs_tools) package to visualize `raw_sonar_image` messages.
 
-```ros2 run acoustic_msgs_tools acoustic_image_view```
+```bash
+ros2 run acoustic_msgs_tools acoustic_image_view
+```
 
 You can also echo the raw topics.
 
@@ -140,8 +143,11 @@ To run with verbosity output set to DEBUG use
 
 ### "Failed to initialize Gemini network"
 - Check that no other program is using the Gemini SDK
-- Verify sonar is powered and connected to network
+- Verify sonar is powered and connected to network and the subnet (i.e 192.168.2.x)
 - Check `sonar_id` matches your hardware or use id=0 if unknown
+
+## Docs
+For full docs go to [gemini_sonar_driver](https://jakebonney10.github.io/gemini_sonar_driver/).
 
 ## TODO / Future Features
 
