@@ -54,7 +54,7 @@ msg.image.sample_count = samples_per_beam;
 msg.image.sample0 = mainImage.m_uiStartRange;
 msg.image.dtype = marine_acoustic_msgs::msg::SonarImageData::DTYPE_UINT8;
 
-// Copy beam angles (convert radians to degrees if needed)
+// Copy beam angles (in radians)
 msg.beam_directions.resize(num_beams);
 for (size_t i = 0; i < num_beams; ++i) {
     msg.beam_directions[i] = (*mainImage.m_vecBearingTable)[i];
