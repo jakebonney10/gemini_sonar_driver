@@ -39,8 +39,10 @@ Edit `config/gemini_sonar.yaml` to configure sonar parameters:
 
 ```yaml
 sonar_id: 0              # Sonar ID on network (0 WORKS FOR ALL SONARS IF ID IS NOT KNOWN)
-range_m: 75.0            # Max range in meters
-gain_percent: 50.0       # Receiver gain 0-100%
+software_mode: "Evo"     # SDK mode (Evo/EvoC/SeaNet/SeaNetC)
+range_m: 5.0             # Max range in meters
+gain_percent: 100.0      # Receiver gain 0-100%
+sound_speed_ms: 1500     # Sound speed in m/s
 ```
 
 ## Usage
@@ -100,6 +102,8 @@ ros2 bag record /gemini/raw_sonar_image
 |-------|-------------|-------------|
 | `/gemini/raw_sonar_image` | `marine_acoustic_msgs/RawSonarImage` | Raw sonar data with beam angles and samples |
 | `/gemini/raw` | `gemini_sonar_driver_interfaces/RawPacket` | Raw Gemini SDK packets for debugging |
+| `/gemini/status` | `gemini_sonar_driver_interfaces/GeminiStatus` | Sonar status information |
+| `/gemini/logger_status` | `gemini_sonar_driver_interfaces/LoggerStatus` | Native GLF logger status |
 
 ## Services
 
@@ -114,9 +118,20 @@ ros2 bag record /gemini/raw_sonar_image
 |-----------|------|---------|-------------|
 | `sonar_id` | int | 0 | Sonar ID on network |
 | `software_mode` | string | "Evo" | SDK mode (Evo/EvoC/SeaNet/SeaNetC) |
-| `range_m` | double | 75.0 | Maximum range in meters |
-| `gain_percent` | double | 50.0 | Receiver gain 0-100% |
+| `frame_id` | string | "gemini_fls" | TF frame ID for sonar data |
+| `log_directory` | string | "/data/gemini" | Directory to save GLF log files |
+| `range_m` | double | 5.0 | Maximum range in meters |
+| `gain_percent` | double | 100.0 | Receiver gain 0-100% |
+| `aperture` | double | 120.0 | Sonar aperture in degrees (120 or 65) |
 | `sound_speed_ms` | int | 1500 | Sound speed in m/s |
+| `sound_speed_manual` | bool | true | Sound speed mode (true=manual, false=auto) |
+| `high_resolution` | bool | true | High resolution mode (1200ik only) |
+| `frequency_mode` | int | 0 | Frequency selection (0=auto, 1=low, 2=high, 3=combined) |
+| `frequency_auto_threshold_m` | double | 40.0 | Threshold for auto mode LF/HF switching |
+| `chirp_mode` | int | 2 | Chirp mode (0=disabled, 1=enabled, 2=auto) |
+| `ping_free_run` | bool | false | Continuous pinging (true) vs interval-based (false) |
+| `ping_interval_ms` | int | 100 | Ping interval in ms when ping_free_run=false |
+| `ping_ext_trigger` | bool | false | External TTL hardware trigger (true) vs software (false) |
 
 ## Troubleshooting
 
