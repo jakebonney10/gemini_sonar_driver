@@ -80,8 +80,11 @@ void GeminiSonarNode::Publishers::init(GeminiSonarNode* node)
     // sonar_detections_ = node->create_publisher<marine_acoustic_msgs::msg::SonarDetections>(
     //     node->parameters_.topics.sonar_detections, 10);
     
-    raw_packet_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::RawPacket>(
-        node->parameters_.topics.raw_packet, 10);
+    // Only create raw_packet publisher if topic name is not empty
+    if (node->shouldAdvertise(node->parameters_.topics.raw_packet)) {
+        raw_packet_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::RawPacket>(
+            node->parameters_.topics.raw_packet, 10);
+    }
 
     status_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::GeminiStatus>(
         node->parameters_.topics.status, 10);
@@ -213,13 +216,15 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
     }
     last_message_time_ = this->now().nanoseconds();
     
-    // Publish raw packet
-    auto raw_msg = std::make_shared<gemini_sonar_driver_interfaces::msg::RawPacket>();
-    raw_msg->header.stamp = this->now();
-    raw_msg->header.frame_id = parameters_.frame_id;
-    raw_msg->message_type = messageType;
-    raw_msg->data.assign(value, value + size);
-    publishers_.raw_packet_->publish(*raw_msg);
+    // Publish raw packet only if publisher was created
+    if (publishers_.raw_packet_) {
+        auto raw_msg = std::make_shared<gemini_sonar_driver_interfaces::msg::RawPacket>();
+        raw_msg->header.stamp = this->now();
+        raw_msg->header.frame_id = parameters_.frame_id;
+        raw_msg->message_type = messageType;
+        raw_msg->data.assign(value, value + size);
+        publishers_.raw_packet_->publish(*raw_msg);
+    }
     
     switch (static_cast<SequencerApi::ESvs5MessageType>(messageType))
     {
@@ -612,6 +617,11 @@ void GeminiSonarNode::shutdownGeminiSDK()
         SequencerApi::StopSvs5();
         sdk_initialized_ = false;
     }
+}
+
+bool GeminiSonarNode::shouldAdvertise(const std::string& topic) const
+{
+    return !topic.empty();
 }
 
 NS_FOOT

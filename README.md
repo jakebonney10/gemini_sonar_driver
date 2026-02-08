@@ -104,9 +104,11 @@ ros2 bag record /gemini/raw_sonar_image
 | Topic | Message Type | Description |
 |-------|-------------|-------------|
 | `/gemini/raw_sonar_image` | `marine_acoustic_msgs/RawSonarImage` | Raw sonar data with beam angles and samples |
-| `/gemini/raw` | `gemini_sonar_driver_interfaces/RawPacket` | Raw Gemini SDK packets for debugging |
+| `/gemini/raw` | `gemini_sonar_driver_interfaces/RawPacket` | Raw Gemini SDK packets (optional, for debugging) |
 | `/gemini/status` | `gemini_sonar_driver_interfaces/GeminiStatus` | Sonar status information |
 | `/gemini/logger_status` | `gemini_sonar_driver_interfaces/LoggerStatus` | Native GLF logger status |
+
+**Note:** The `/gemini/raw` topic is optional and intended for debugging. To disable it in production, set the `topics.raw_packet` parameter to an empty string `""` in your config file.
 
 ## Services
 
@@ -135,6 +137,7 @@ ros2 bag record /gemini/raw_sonar_image
 | `ping_free_run` | bool | false | Continuous pinging (true) vs interval-based (false) |
 | `ping_interval_ms` | int | 100 | Ping interval in ms when ping_free_run=false |
 | `ping_ext_trigger` | bool | false | External TTL hardware trigger (true) vs software (false) |
+| `topics.raw_packet` | string | "gemini/raw" | Raw packet topic name (set to "" to disable) |
 
 ## Troubleshooting
 
