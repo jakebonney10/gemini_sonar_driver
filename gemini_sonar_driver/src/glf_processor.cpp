@@ -76,9 +76,11 @@ BeamData extractBeamData(
     beam_data.flat_data.reserve(flat_data.size());
     beam_data.flat_data.assign(flat_data.begin(), flat_data.end());
     
-    // The bearing table is in RADIANS in descending order, so reverse during assignment
+    // Convert bearing table from double to float and reverse (SDK is descending order)
     beam_data.bearing_angles_rad.reserve(bearing_table.size());
-    beam_data.bearing_angles_rad.assign(bearing_table.rbegin(), bearing_table.rend());
+    for (auto it = bearing_table.rbegin(); it != bearing_table.rend(); ++it) {
+        beam_data.bearing_angles_rad.push_back(static_cast<float>(*it));
+    }
     
     return beam_data;
 }

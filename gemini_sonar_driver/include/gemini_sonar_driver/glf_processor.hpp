@@ -106,7 +106,7 @@ struct BeamData
 {
     std::vector<uint8_t> flat_data;          ///< Raw flat intensity data in row-major format (OPTIMAL for ROS)
     std::vector<std::vector<uint8_t>> beams; ///< 2D beam structure [beam_index][range_bin] (for processing)
-    std::vector<double> bearing_angles_rad;  ///< Factory-calibrated beam angles (radians)
+    std::vector<float> bearing_angles_rad;   ///< Factory-calibrated beam angles (radians, converted to float for ROS)
 };
 
 /**
