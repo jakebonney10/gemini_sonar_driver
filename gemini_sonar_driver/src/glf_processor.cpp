@@ -164,9 +164,8 @@ marine_acoustic_msgs::msg::SonarImageData createSonarImageData(
 }
 
 marine_acoustic_msgs::msg::RawSonarImage createRawSonarImage(
-    const GLF::GMainImage& mainImage,
     const PingMetadata& metadata,
-    const BeamData& beam_data,
+    BeamData&& beam_data,  // rvalue reference - consumes beam_data
     const std::string& frame_id)
 {
     using marine_acoustic_msgs::msg::RawSonarImage;
@@ -197,15 +196,12 @@ marine_acoustic_msgs::msg::RawSonarImage createRawSonarImage(
     // Gemini doesn't have separate TX steering angles table - leave empty
     msg.tx_angles.clear();
 
-    // RX angles = factory-calibrated bearing table (radians)
-    // Direct assignment - bearing_angles_rad is already in the correct format
-    msg.rx_angles.assign(
-        beam_data.bearing_angles_rad.begin(),
-        beam_data.bearing_angles_rad.end()
-    );
+    msg.rx_angles = std::move(beam_data.bearing_angles_rad);
 
-    // Image payload: row-major, beam-major uint8
-    msg.image = createSonarImageData(beam_data, metadata, SonarImageData::DTYPE_UINT8);
+    msg.image.dtype = SonarImageData::DTYPE_UINT8;
+    msg.image.beam_count = metadata.num_beams;
+    msg.image.is_bigendian = false;
+    msg.image.data = std::move(beam_data.flat_data);
 
     return msg;
 }

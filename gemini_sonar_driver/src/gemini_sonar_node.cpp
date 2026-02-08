@@ -272,7 +272,6 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     std::lock_guard<std::mutex> lock(data_mutex_);
     
     ping_number_++;
-    rclcpp::Time timestamp = this->now();
     
     // Extract main image from GLF structure
     const GLF::GMainImage& mainImage = image.m_mainImage;
@@ -310,15 +309,17 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
         return;
     }
     
-    // Create and publish ROS messages
-    auto raw_msg = glf_processor::createRawSonarImage(mainImage, metadata, beam_data, parameters_.frame_id);
-    publishers_.raw_sonar_image_->publish(raw_msg);
+    // OPTIMIZATION: Publish directly without storing message locally
+    // Move beam_data to avoid copying large sonar image buffer
+    publishers_.raw_sonar_image_->publish(
+        glf_processor::createRawSonarImage(metadata, std::move(beam_data), parameters_.frame_id)
+    );
     
-    // auto projected_msg = glf_processor::createProjectedSonarImage(mainImage, metadata, beam_data, parameters_.frame_id);
+    // auto projected_msg = glf_processor::createProjectedSonarImage(mainImage, metadata, std::move(beam_data), parameters_.frame_id);
     // publishers_.projected_sonar_image_->publish(projected_msg);
     
-    RCLCPP_DEBUG(this->get_logger(), "Processed ping %u with %zu beams", 
-                 ping_number_, beam_data.beams.size());
+    RCLCPP_DEBUG(this->get_logger(), "Processed ping %u with %u beams", 
+                 ping_number_, metadata.num_beams);
 }
 
 void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus)
