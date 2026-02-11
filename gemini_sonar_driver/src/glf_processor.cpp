@@ -63,59 +63,23 @@ BeamData extractBeamData(
 {
     BeamData beam_data;
     
-    // Validate pointers
-    if (!mainImage.m_vecData) {
+    // validate null pointers to prevent crash
+    if (!mainImage.m_vecData || !mainImage.m_vecBearingTable) {
         RCLCPP_ERROR(rclcpp::get_logger("glf_processor"), 
-            "GLF data pointer (m_vecData) is null - cannot extract beam data");
-        return beam_data;  // Return empty
-    }
-    
-    if (!mainImage.m_vecBearingTable) {
-        RCLCPP_ERROR(rclcpp::get_logger("glf_processor"), 
-            "GLF bearing table pointer (m_vecBearingTable) is null - cannot extract beam angles");
-        return beam_data;  // Return empty
+            "GLF data pointers are null - cannot extract beam data");
+        return beam_data;
     }
     
     const std::vector<UInt8>& flat_data = *mainImage.m_vecData;
     const std::vector<double>& bearing_table = *mainImage.m_vecBearingTable;
     
-    // Validate dimensions match
-    const size_t expected_size = metadata.num_beams * metadata.samples_per_beam;
-    if (flat_data.size() != expected_size) {
-        RCLCPP_ERROR(rclcpp::get_logger("glf_processor"), 
-            "Data size mismatch: expected %zu bytes (%u beams × %u samples), got %zu bytes",
-            expected_size, metadata.num_beams, metadata.samples_per_beam, flat_data.size());
-        return beam_data;  // Data size mismatch
-    }
-    
-    if (bearing_table.size() != metadata.num_beams) {
-        RCLCPP_ERROR(rclcpp::get_logger("glf_processor"), 
-            "Bearing table size mismatch: expected %u beams, got %zu angles",
-            metadata.num_beams, bearing_table.size());
-        return beam_data;  // Bearing table size mismatch
-    }
-    
-    // Store raw flat data directly - OPTIMAL for ROS message packing!
-    // This is already in row-major (beam-major) format: [beam0_samples, beam1_samples, ...]
+    beam_data.flat_data.reserve(flat_data.size());
     beam_data.flat_data.assign(flat_data.begin(), flat_data.end());
     
-    // Extract bearing angles from SDK's factory-calibrated bearing table
-    // The bearing table is in RADIANS and is in descending order so need to flip
-    beam_data.bearing_angles_rad.assign(bearing_table.begin(), bearing_table.end());
-    std::reverse(beam_data.bearing_angles_rad.begin(), beam_data.bearing_angles_rad.end());
-    
-    // Also create 2D structure for algorithms that need per-beam access
-    // (e.g., peak detection, filtering)
-    beam_data.beams.resize(metadata.num_beams);
-    
-    for (size_t beam_idx = 0; beam_idx < metadata.num_beams; ++beam_idx) {
-        size_t beam_start = beam_idx * metadata.samples_per_beam;
-        size_t beam_end = beam_start + metadata.samples_per_beam;
-        
-        beam_data.beams[beam_idx].assign(
-            flat_data.begin() + beam_start,
-            flat_data.begin() + beam_end
-        );
+    // Convert bearing table from double to float and reverse (SDK is descending order)
+    beam_data.bearing_angles_rad.reserve(bearing_table.size());
+    for (auto it = bearing_table.rbegin(); it != bearing_table.rend(); ++it) {
+        beam_data.bearing_angles_rad.push_back(static_cast<float>(*it));
     }
     
     return beam_data;
@@ -202,9 +166,8 @@ marine_acoustic_msgs::msg::SonarImageData createSonarImageData(
 }
 
 marine_acoustic_msgs::msg::RawSonarImage createRawSonarImage(
-    const GLF::GMainImage& mainImage,
     const PingMetadata& metadata,
-    const BeamData& beam_data,
+    BeamData&& beam_data,  // rvalue reference - consumes beam_data
     const std::string& frame_id)
 {
     using marine_acoustic_msgs::msg::RawSonarImage;
@@ -235,15 +198,12 @@ marine_acoustic_msgs::msg::RawSonarImage createRawSonarImage(
     // Gemini doesn't have separate TX steering angles table - leave empty
     msg.tx_angles.clear();
 
-    // RX angles = factory-calibrated bearing table (radians)
-    // Direct assignment - bearing_angles_rad is already in the correct format
-    msg.rx_angles.assign(
-        beam_data.bearing_angles_rad.begin(),
-        beam_data.bearing_angles_rad.end()
-    );
+    msg.rx_angles = std::move(beam_data.bearing_angles_rad);
 
-    // Image payload: row-major, beam-major uint8
-    msg.image = createSonarImageData(beam_data, metadata, SonarImageData::DTYPE_UINT8);
+    msg.image.dtype = SonarImageData::DTYPE_UINT8;
+    msg.image.beam_count = metadata.num_beams;
+    msg.image.is_bigendian = false;
+    msg.image.data = std::move(beam_data.flat_data);
 
     return msg;
 }

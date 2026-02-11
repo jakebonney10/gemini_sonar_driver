@@ -31,4 +31,4 @@
       raw_sonar_image: "gemini/raw_sonar_image"
       # projected_sonar_image: "gemini/projected_sonar"
       # sonar_detections: "gemini/detections"
-      raw_packet: "gemini/raw"
+      raw_packet: ""  # Set to "" (empty string) to disable raw packet publishing for production

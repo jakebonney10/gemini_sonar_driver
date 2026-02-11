@@ -227,6 +227,13 @@ protected:
                          const void* data, 
                          const std::string& param_name);
 
+    /**
+     * @brief Check if a topic should be advertised (published)
+     * @param topic The topic name to check
+     * @return true if topic name is not empty, false otherwise
+     */
+    bool shouldAdvertise(const std::string& topic) const;
+
     // Member variables
     Parameters parameters_;
     Publishers publishers_;

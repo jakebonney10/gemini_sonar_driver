@@ -99,14 +99,57 @@ ros2 bag record -a  # Record all topics
 ros2 bag record /gemini/raw_sonar_image
 ```
 
+### Convert GLF Files to ROS2 Bags (Offline Processing)
+
+The `glf_to_rosbag` tool converts Gemini native GLF (Gemini Log Format) files recorded during sonar operation into ROS2 bag files for offline replay and analysis.
+
+#### Basic Usage
+
+```bash
+ros2 run gemini_sonar_driver glf_to_rosbag <input_glf_file> <output_bag_directory> [frame_id]
+```
+
+#### Example
+
+```bash
+# Convert a single GLF file to ROS2 bag in MCAP format
+ros2 run gemini_sonar_driver glf_to_rosbag \
+    /home/user/data/log_2026-01-06-213121.glf \
+    /home/user/bags/gemini_replay \
+    gemini
+```
+
+#### Output
+
+- **Format**: MCAP (modern ROS2 bag format)
+- **Topics**: 
+  - `/gemini/raw_sonar_image` - Full sonar images with beam data preserved from GLF
+  - `/gemini/status` - Sonar health and configuration status messages
+- **Timestamps**: Original acquisition timestamps from GLF file are preserved
+
+#### Playing Back Converted Bags
+
+```bash
+# Play the converted bag file
+ros2 bag play /home/user/bags/gemini_replay/gemini_replay_0.mcap
+
+# View bag information
+ros2 bag info /home/user/bags/gemini_replay/gemini_replay_0.mcap
+
+# Visualize during playback (in separate terminal)
+ros2 run acoustic_msgs_tools acoustic_image_view
+```
+
 ## Published Topics
 
 | Topic | Message Type | Description |
 |-------|-------------|-------------|
 | `/gemini/raw_sonar_image` | `marine_acoustic_msgs/RawSonarImage` | Raw sonar data with beam angles and samples |
-| `/gemini/raw` | `gemini_sonar_driver_interfaces/RawPacket` | Raw Gemini SDK packets for debugging |
+| `/gemini/raw` | `gemini_sonar_driver_interfaces/RawPacket` | Raw Gemini SDK packets (optional, for debugging) |
 | `/gemini/status` | `gemini_sonar_driver_interfaces/GeminiStatus` | Sonar status information |
 | `/gemini/logger_status` | `gemini_sonar_driver_interfaces/LoggerStatus` | Native GLF logger status |
+
+**Note:** The `/gemini/raw` topic is optional and intended for debugging. To disable it in production, set the `topics.raw_packet` parameter to an empty string `""` in your config file.
 
 ## Services
 
@@ -135,6 +178,7 @@ ros2 bag record /gemini/raw_sonar_image
 | `ping_free_run` | bool | false | Continuous pinging (true) vs interval-based (false) |
 | `ping_interval_ms` | int | 100 | Ping interval in ms when ping_free_run=false |
 | `ping_ext_trigger` | bool | false | External TTL hardware trigger (true) vs software (false) |
+| `topics.raw_packet` | string | "gemini/raw" | Raw packet topic name (set to "" to disable) |
 
 ## Troubleshooting
 
@@ -152,7 +196,7 @@ For full docs go to [gemini_sonar_driver](https://jakebonney10.github.io/gemini_
 ## TODO / Future Features
 
 - [ ] make raw_msg type publisher optional 
-- [ ] Create glf-to-ROS2 conversions to play back log files
+- [x] Create glf-to-ROS2 conversions to play back log files
 - [ ] Implement range/gain adjustment on the fly
 - [ ] Log ping metadata in custom interfaace msg
 - [ ] add marine_acoustic_msgs detections and/or projection msg

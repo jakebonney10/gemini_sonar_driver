@@ -106,7 +106,7 @@ struct BeamData
 {
     std::vector<uint8_t> flat_data;          ///< Raw flat intensity data in row-major format (OPTIMAL for ROS)
     std::vector<std::vector<uint8_t>> beams; ///< 2D beam structure [beam_index][range_bin] (for processing)
-    std::vector<double> bearing_angles_rad;  ///< Factory-calibrated beam angles (radians)
+    std::vector<float> bearing_angles_rad;   ///< Factory-calibrated beam angles (radians, converted to float for ROS)
 };
 
 /**
@@ -180,16 +180,14 @@ marine_acoustic_msgs::msg::SonarImageData createSonarImageData(
 /**
  * @brief Create marine_acoustic_msgs/RawSonarImage from parsed GLF data
  * 
- * @param mainImage GLF main image structure from SDK
  * @param metadata Extracted ping metadata
  * @param beam_data Extracted beam data with bearing angles
  * @param frame_id TF frame ID for the sonar
  * @return marine_acoustic_msgs::msg::RawSonarImage Complete raw sonar image message
  */
 marine_acoustic_msgs::msg::RawSonarImage createRawSonarImage(
-    const GLF::GMainImage& mainImage,
     const PingMetadata& metadata,
-    const BeamData& beam_data,
+    BeamData&& beam_data,
     const std::string& frame_id);
 
 /**

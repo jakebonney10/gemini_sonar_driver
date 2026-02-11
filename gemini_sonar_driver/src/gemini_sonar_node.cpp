@@ -80,8 +80,11 @@ void GeminiSonarNode::Publishers::init(GeminiSonarNode* node)
     // sonar_detections_ = node->create_publisher<marine_acoustic_msgs::msg::SonarDetections>(
     //     node->parameters_.topics.sonar_detections, 10);
     
-    raw_packet_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::RawPacket>(
-        node->parameters_.topics.raw_packet, 10);
+    // Only create raw_packet publisher if topic name is not empty
+    if (node->shouldAdvertise(node->parameters_.topics.raw_packet)) {
+        raw_packet_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::RawPacket>(
+            node->parameters_.topics.raw_packet, 10);
+    }
 
     status_ = node->create_publisher<gemini_sonar_driver_interfaces::msg::GeminiStatus>(
         node->parameters_.topics.status, 10);
@@ -213,13 +216,15 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
     }
     last_message_time_ = this->now().nanoseconds();
     
-    // Publish raw packet
-    auto raw_msg = std::make_shared<gemini_sonar_driver_interfaces::msg::RawPacket>();
-    raw_msg->header.stamp = this->now();
-    raw_msg->header.frame_id = parameters_.frame_id;
-    raw_msg->message_type = messageType;
-    raw_msg->data.assign(value, value + size);
-    publishers_.raw_packet_->publish(*raw_msg);
+    // Publish raw packet only if publisher was created
+    if (publishers_.raw_packet_) {
+        auto raw_msg = std::make_shared<gemini_sonar_driver_interfaces::msg::RawPacket>();
+        raw_msg->header.stamp = this->now();
+        raw_msg->header.frame_id = parameters_.frame_id;
+        raw_msg->message_type = messageType;
+        raw_msg->data.assign(value, value + size);
+        publishers_.raw_packet_->publish(*raw_msg);
+    }
     
     switch (static_cast<SequencerApi::ESvs5MessageType>(messageType))
     {
@@ -267,7 +272,6 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
     std::lock_guard<std::mutex> lock(data_mutex_);
     
     ping_number_++;
-    rclcpp::Time timestamp = this->now();
     
     // Extract main image from GLF structure
     const GLF::GMainImage& mainImage = image.m_mainImage;
@@ -305,15 +309,17 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
         return;
     }
     
-    // Create and publish ROS messages
-    auto raw_msg = glf_processor::createRawSonarImage(mainImage, metadata, beam_data, parameters_.frame_id);
-    publishers_.raw_sonar_image_->publish(raw_msg);
+    // OPTIMIZATION: Publish directly without storing message locally
+    // Move beam_data to avoid copying large sonar image buffer
+    publishers_.raw_sonar_image_->publish(
+        glf_processor::createRawSonarImage(metadata, std::move(beam_data), parameters_.frame_id)
+    );
     
-    // auto projected_msg = glf_processor::createProjectedSonarImage(mainImage, metadata, beam_data, parameters_.frame_id);
+    // auto projected_msg = glf_processor::createProjectedSonarImage(mainImage, metadata, std::move(beam_data), parameters_.frame_id);
     // publishers_.projected_sonar_image_->publish(projected_msg);
     
-    RCLCPP_DEBUG(this->get_logger(), "Processed ping %u with %zu beams", 
-                 ping_number_, beam_data.beams.size());
+    RCLCPP_DEBUG(this->get_logger(), "Processed ping %u with %u beams", 
+                 ping_number_, metadata.num_beams);
 }
 
 void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus)
@@ -612,6 +618,11 @@ void GeminiSonarNode::shutdownGeminiSDK()
         SequencerApi::StopSvs5();
         sdk_initialized_ = false;
     }
+}
+
+bool GeminiSonarNode::shouldAdvertise(const std::string& topic) const
+{
+    return !topic.empty();
 }
 
 NS_FOOT
