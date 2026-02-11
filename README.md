@@ -99,6 +99,47 @@ ros2 bag record -a  # Record all topics
 ros2 bag record /gemini/raw_sonar_image
 ```
 
+### Convert GLF Files to ROS2 Bags (Offline Processing)
+
+The `glf_to_rosbag` tool converts Gemini native GLF (Gemini Log Format) files recorded during sonar operation into ROS2 bag files for offline replay and analysis.
+
+#### Basic Usage
+
+```bash
+ros2 run gemini_sonar_driver glf_to_rosbag <input_glf_file> <output_bag_directory> [frame_id]
+```
+
+#### Example
+
+```bash
+# Convert a single GLF file to ROS2 bag in MCAP format
+ros2 run gemini_sonar_driver glf_to_rosbag \
+    /home/user/data/log_2026-01-06-213121.glf \
+    /home/user/bags/gemini_replay \
+    gemini
+```
+
+#### Output
+
+- **Format**: MCAP (modern ROS2 bag format)
+- **Topics**: 
+  - `/gemini/raw_sonar_image` - Full sonar images with beam data preserved from GLF
+  - `/gemini/status` - Sonar health and configuration status messages
+- **Timestamps**: Original acquisition timestamps from GLF file are preserved
+
+#### Playing Back Converted Bags
+
+```bash
+# Play the converted bag file
+ros2 bag play /home/user/bags/gemini_replay/gemini_replay_0.mcap
+
+# View bag information
+ros2 bag info /home/user/bags/gemini_replay/gemini_replay_0.mcap
+
+# Visualize during playback (in separate terminal)
+ros2 run acoustic_msgs_tools acoustic_image_view
+```
+
 ## Published Topics
 
 | Topic | Message Type | Description |
@@ -155,7 +196,7 @@ For full docs go to [gemini_sonar_driver](https://jakebonney10.github.io/gemini_
 ## TODO / Future Features
 
 - [ ] make raw_msg type publisher optional 
-- [ ] Create glf-to-ROS2 conversions to play back log files
+- [x] Create glf-to-ROS2 conversions to play back log files
 - [ ] Implement range/gain adjustment on the fly
 - [ ] Log ping metadata in custom interfaace msg
 - [ ] add marine_acoustic_msgs detections and/or projection msg
