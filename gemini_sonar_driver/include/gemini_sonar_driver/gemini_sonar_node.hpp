@@ -83,6 +83,8 @@ public:
         bool sound_speed_manual = false;                  ///< Sound speed mode: true=manual, false=auto (uses sonar SOS sensor)
         int chirp_mode = 2;                               ///< Chirp mode: 0=disabled, 1=enabled, 2=auto
         bool high_resolution = true;                      ///< High resolution mode (1200ik only)
+        int cpu_performance = 2;                          ///< SDK image quality/CPU level: 0=LOW,1=MED (256 beams), 2=HIGH (512), 3=ULTRA
+        int image_quality_pixels = 2048;                  ///< SDK radial resolution (m_screenPixels); lower=higher frame rate (e.g. 512/1024/2048)
         int frequency_mode = 0;                           ///< Frequency selection: 0=auto, 1=low(720kHz), 2=high(1200kHz), 3=combined
         double frequency_auto_threshold_m = 40.0;         ///< Threshold (m) for auto mode to switch LF/HF (1-50m valid)
         

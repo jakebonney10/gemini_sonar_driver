@@ -28,6 +28,8 @@ void GeminiSonarNode::Parameters::declare(GeminiSonarNode* node)
     node->declare_parameter("frequency_mode", frequency_mode);
     node->declare_parameter("frequency_auto_threshold_m", frequency_auto_threshold_m);
     node->declare_parameter("chirp_mode", chirp_mode);
+    node->declare_parameter("cpu_performance", cpu_performance);
+    node->declare_parameter("image_quality_pixels", image_quality_pixels);
     node->declare_parameter("ping_free_run", ping_free_run);
     node->declare_parameter("ping_interval_ms", ping_interval_ms);
     node->declare_parameter("ping_ext_trigger", ping_ext_trigger);
@@ -52,6 +54,8 @@ void GeminiSonarNode::Parameters::update(GeminiSonarNode* node)
     node->get_parameter("sound_speed_manual", sound_speed_manual);
     node->get_parameter("chirp_mode", chirp_mode);
     node->get_parameter("high_resolution", high_resolution);
+    node->get_parameter("cpu_performance", cpu_performance);
+    node->get_parameter("image_quality_pixels", image_quality_pixels);
     node->get_parameter("frequency_mode", frequency_mode);
     node->get_parameter("frequency_auto_threshold_m", frequency_auto_threshold_m);
     node->get_parameter("ping_free_run", ping_free_run);
@@ -484,8 +488,12 @@ bool GeminiSonarNode::configureSonar()
 
     // Configure cpu performance level i.e. image quality or num_beams (LOW_CPU, MEDIUM_CPU, HIGH_CPU, UL_HIGH_CPU)
     SequencerApi::SonarImageQualityLevel qualityLevel;
-    qualityLevel.m_performance = SequencerApi::HIGH_CPU; // default to high performance mode TODO: make param
-    qualityLevel.m_screenPixels = 2048; // 2048 means highest quality (512,1024) TODO: make param
+    const SequencerApi::ESdkPerformanceControl perfLevels[4] = {
+        SequencerApi::LOW_CPU, SequencerApi::MEDIUM_CPU, SequencerApi::HIGH_CPU, SequencerApi::UL_HIGH_CPU };
+    int perfIdx = parameters_.cpu_performance;
+    if (perfIdx < 0) perfIdx = 0; else if (perfIdx > 3) perfIdx = 3;
+    qualityLevel.m_performance = perfLevels[perfIdx];
+    qualityLevel.m_screenPixels = parameters_.image_quality_pixels;
     setSdkParameter(SequencerApi::SVS5_CONFIG_CPU_PERFORMANCE, sizeof(SequencerApi::SonarImageQualityLevel),
                    &qualityLevel, "performance level");
 

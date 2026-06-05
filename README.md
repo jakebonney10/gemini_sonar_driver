@@ -172,10 +172,12 @@ ros2 run acoustic_msgs_tools acoustic_image_view
 | `sound_speed_ms` | int | 1500 | Sound speed in m/s |
 | `sound_speed_manual` | bool | true | Sound speed mode (true=manual, false=auto) |
 | `high_resolution` | bool | true | High resolution mode (1200ik only) |
+| `cpu_performance` | int | 2 | SDK beamforming level: 0=LOW, 1=MEDIUM, 2=HIGH, 3=ULTRA |
+| `image_quality_pixels` | int | 2048 | Range-direction resolution cap (SDK m_screenPixels). Primary frame-rate lever on embedded CPUs: on RPi CM4 @10m range 2048=~3.7Hz, 1024=~7Hz, 512=~11.5Hz. No effect when range-determined sample count is below the cap (short ranges). |
 | `frequency_mode` | int | 0 | Frequency selection (0=auto, 1=low, 2=high, 3=combined) |
 | `frequency_auto_threshold_m` | double | 40.0 | Threshold for auto mode LF/HF switching |
 | `chirp_mode` | int | 2 | Chirp mode (0=disabled, 1=enabled, 2=auto) |
-| `ping_free_run` | bool | false | Continuous pinging (true) vs interval-based (false) |
+| `ping_free_run` | bool | false | Continuous pinging (true) vs interval-based (false). NOTE: interval mode measured ~1Hz bursty on RPi CM4; free-run recommended for steady frame rates |
 | `ping_interval_ms` | int | 100 | Ping interval in ms when ping_free_run=false |
 | `ping_ext_trigger` | bool | false | External TTL hardware trigger (true) vs software (false) |
 | `topics.raw_packet` | string | "gemini/raw" | Raw packet topic name (set to "" to disable) |
@@ -184,6 +186,12 @@ ros2 run acoustic_msgs_tools acoustic_image_view
 
 To run with verbosity output set to DEBUG use 
 ```ros2 run gemini_sonar_driver gemini_sonar_node --ros-args --log-level gemini_sonar_driver:=debug```
+
+### Low or bursty frame rate (~1 Hz)
+- Set `ping_free_run: true` (interval mode was measured to deliver ~1Hz bursts on RPi CM4 while still saturating a CPU core)
+- Lower `image_quality_pixels` (2048 -> 1024 or 512). The SDK forms each image on a single thread; per-ping cost scales with samples/beam. Measured on RPi CM4 @10m: 2048=~3.7Hz, 1024=~7Hz, 512=~11.5Hz
+- Shorter `range_m` increases achievable rate (less acoustic travel time and fewer samples)
+- `cpu_performance` (beam count) is a weak lever; keep at 2 (HIGH)
 
 ### "Failed to initialize Gemini network"
 - Check that no other program is using the Gemini SDK
