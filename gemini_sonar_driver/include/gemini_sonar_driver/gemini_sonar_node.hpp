@@ -94,7 +94,7 @@ public:
         struct Topics
         {
             std::string raw_sonar_image = "gemini/raw_sonar_image";           ///< marine_acoustic_msgs/RawSonarImage
-            // std::string projected_sonar_image = "gemini/projected_sonar";     ///< marine_acoustic_msgs/ProjectedSonarImage
+            std::string projected_sonar_image = "";                           ///< marine_acoustic_msgs/ProjectedSonarImage (optional; empty = disabled)
             // std::string sonar_detections = "gemini/detections";               ///< marine_acoustic_msgs/SonarDetections
             std::string raw_packet = "gemini/raw";                            ///< Raw Gemini packets
             std::string status = "gemini/status";                             ///< Gemini device status
@@ -112,7 +112,7 @@ public:
     struct Publishers
     {
         rclcpp::Publisher<marine_acoustic_msgs::msg::RawSonarImage>::SharedPtr raw_sonar_image_;
-        // rclcpp::Publisher<marine_acoustic_msgs::msg::ProjectedSonarImage>::SharedPtr projected_sonar_image_;
+        rclcpp::Publisher<marine_acoustic_msgs::msg::ProjectedSonarImage>::SharedPtr projected_sonar_image_;
         // rclcpp::Publisher<marine_acoustic_msgs::msg::SonarDetections>::SharedPtr sonar_detections_;
         rclcpp::Publisher<gemini_sonar_driver_interfaces::msg::RawPacket>::SharedPtr raw_packet_;
         rclcpp::Publisher<gemini_sonar_driver_interfaces::msg::GeminiStatus>::SharedPtr status_;

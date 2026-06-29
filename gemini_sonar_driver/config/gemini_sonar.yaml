@@ -29,6 +29,6 @@
     # Topic Names
     topics:
       raw_sonar_image: "gemini/raw_sonar_image"
-      # projected_sonar_image: "gemini/projected_sonar"
+      projected_sonar_image: ""  # Optional: set to e.g. "gemini/projected_sonar" to also publish ProjectedSonarImage (off by default; ~doubles bandwidth, derivable from raw)
       # sonar_detections: "gemini/detections"
       raw_packet: ""  # Set to "" (empty string) to disable raw packet publishing for production
