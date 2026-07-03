@@ -18,21 +18,31 @@ ROS2 driver for the Tritech Gemini 1200ikd multibeam imaging sonar.
 
 ## Installation
 
-Put gemini sdk in gemini_sonar_driver top level directory. Make sure to run `InstallSDK.sh` to install the libs system wide.
+Extract the Gemini SDK into the top level of this repository (next to this README), e.g.:
+
+```
+gemini_sonar_driver/
+  GeminiSDK_v2.0.41.0_Ubuntu_22.04_x86_64/   <-- extracted SDK
+  gemini_sonar_driver/                        <-- driver package
+  gemini_sonar_driver_interfaces/
+```
+
+The SDK is not committed to this repository (Tritech's license does not permit
+redistribution), so this is a one-time manual step per machine. The build
+auto-detects the newest `GeminiSDK_v*` directory. Do **not** run the SDK's
+`InstallSDK.sh` — no system-wide install is needed.
 
 ```bash
-cd ~/your/ros/worskspace
-rosdep install --from-paths src -y --ignore-src
+cd ~/your/ros/workspace
+rosdep install --from-paths src -y --ignore-src   # also installs patchelf, needed at build time
 colcon build --packages-select gemini_sonar_driver_interfaces gemini_sonar_driver
 source install/setup.bash
 ```
 
-[NOTE!] For some reason on 24.04 and Jazzy the node can fail to find the gemini SDK libs at runtime. If this happpens you can manually source these in the terminal prior to running the node it termporaily fixes the problem. You could also add to .bashrc so it persists. 
-
-```bash
-export GEMINI_BIN="/path/to/ros_workspace/src/gemini_sonar_driver/GeminiSDK_v2.0.39.0_Ubuntu_24.04_x86_64/bin"
-export LD_LIBRARY_PATH="$GEMINI_BIN:$LD_LIBRARY_PATH"
-```
+The build copies the SDK libraries into the install space and links the nodes
+with relative RPATHs, so the result is fully self-contained: no
+`LD_LIBRARY_PATH` setup, no `/usr/local/lib` installs, and `install/` can be
+copied to another machine (same OS/arch) and run as-is.
 
 ## Configuration
 
