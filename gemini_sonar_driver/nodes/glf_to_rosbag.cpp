@@ -263,6 +263,7 @@ private:
             auto bag_message = std::make_shared<rosbag2_storage::SerializedBagMessage>();
             bag_message->topic_name = "/gemini/raw_sonar_image";
             bag_message->recv_timestamp = ros_time.nanoseconds();
+            bag_message->send_timestamp = ros_time.nanoseconds();
             bag_message->serialized_data = std::shared_ptr<rcutils_uint8_array_t>(
                 new rcutils_uint8_array_t,
                 [](rcutils_uint8_array_t* data) {
@@ -299,6 +300,7 @@ private:
             auto bag_message = std::make_shared<rosbag2_storage::SerializedBagMessage>();
             bag_message->topic_name = "/gemini/status";
             bag_message->recv_timestamp = ros_time.nanoseconds();
+            bag_message->send_timestamp = ros_time.nanoseconds();
             bag_message->serialized_data = std::shared_ptr<rcutils_uint8_array_t>(
                 new rcutils_uint8_array_t,
                 [](rcutils_uint8_array_t* data) {

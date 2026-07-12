@@ -8,6 +8,8 @@
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- Rewrites the bundled Gemini SDK libs' RUNPATH at install time -->
+  <buildtool_depend>patchelf</buildtool_depend>
 
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
