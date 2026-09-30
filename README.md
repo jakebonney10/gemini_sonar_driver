@@ -5,10 +5,12 @@ ROS2 driver for the Tritech Gemini 1200ikd multibeam imaging sonar.
 ## Features
 
 - Configure sonar parameters via ROS2 parameters
-- Start/stop sonar operation via ROS2 services
+- Start/stop sonar operation via ROS2 services (start is verified: fails unless ping data actually arrives)
 - Publish multibeam data using `marine_acoustic_msgs` RawSonarImage msg
 - Log data in native Gemini .glf format
+- System health reporting via `diagnostic_updater` on `/diagnostics`
 - Publish raw Gemini SDK packets for debugging
+- `gemini_set_ip` utility to discover sonars and program the head's IP address
 
 ## Dependencies
 
@@ -74,11 +76,27 @@ ros2 service call /gemini/start_sonar gemini_sonar_driver_interfaces/srv/StartSo
 ros2 service call /gemini/start_sonar gemini_sonar_driver_interfaces/srv/StartSonar "{enable_logging: false, log_directory: ''}"
 ```
 
+`start_sonar` only returns success once ping data is actually received (10 s timeout). The head acknowledges the start command even when it never begins pinging, so a failure here usually means another surface unit owns the head — see Troubleshooting.
+
 ### Stop the Sonar
 
 ```bash
 ros2 service call /gemini/stop_sonar gemini_sonar_driver_interfaces/srv/StopSonar 
 ```
+
+### Set the Sonar IP Address
+
+Standalone utility for commissioning a new head or moving one to a different subnet. It cannot run while the driver (or any Gemini software) is running. The head permanently keeps its fixed address `192.168.2.200`; this programs the *alternate* address it also responds to.
+
+```bash
+# Discover sonars and show current addressing (read-only)
+ros2 run gemini_sonar_driver gemini_set_ip
+
+# Program a new alternate IP (confirms, flashes, reboots, verifies)
+ros2 run gemini_sonar_driver gemini_set_ip --set 192.168.2.204 255.255.255.0
+```
+
+The host needs an IP on the head's subnet to send commands (e.g. `sudo ip addr add 192.168.2.1/24 dev <iface>`). Run with `--help` for options (`--id`, `--via-alt`, `--yes`).
 
 ### Monitor Topics
 
@@ -135,7 +153,7 @@ ros2 run gemini_sonar_driver glf_to_rosbag \
 - **Topics**: 
   - `/gemini/raw_sonar_image` - Full sonar images with beam data preserved from GLF
   - `/gemini/status` - Sonar health and configuration status messages
-- **Timestamps**: Original acquisition timestamps from GLF file are preserved
+- **Timestamps**: Original GLF acquisition timestamps, converted to UTC Unix time (see Timestamps / Time Sync)
 
 #### Playing Back Converted Bags
 
@@ -156,16 +174,33 @@ ros2 run acoustic_msgs_tools acoustic_image_view
 |-------|-------------|-------------|
 | `/gemini/raw_sonar_image` | `marine_acoustic_msgs/RawSonarImage` | Raw sonar data with beam angles and samples |
 | `/gemini/raw` | `gemini_sonar_driver_interfaces/RawPacket` | Raw Gemini SDK packets (optional, for debugging) |
-| `/gemini/status` | `gemini_sonar_driver_interfaces/GeminiStatus` | Sonar status information |
+| `/gemini/status` | `gemini_sonar_driver_interfaces/GeminiStatus` | Sonar status, including `surface_ip` (who the head is streaming to) |
 | `/gemini/logger_status` | `gemini_sonar_driver_interfaces/LoggerStatus` | Native GLF logger status |
+| `/diagnostics` | `diagnostic_msgs/DiagnosticArray` | Driver/sonar health (see Diagnostics) |
 
 **Note:** The `/gemini/raw` topic is optional and intended for debugging. To disable it in production, set the `topics.raw_packet` parameter to an empty string `""` in your config file.
+
+### Diagnostics
+
+Four checks published at 1 Hz, hardware ID `gemini_sonar`:
+
+| Check | Reports |
+|-------|---------|
+| Connection | Status broadcast recency, sonar ID/IP, `surface ip` (WARN on timeout) |
+| Streaming | Commanded state vs. actual ping arrival (WARN if commanded on but no pings) |
+| Head Health | Over-temp/bootloader (ERROR), out of water/shutdown flags (WARN) |
+| Logger | GLF recording state, file info, disk space (WARN below 10% free) |
+
+### Timestamps / Time Sync
+
+- `raw_sonar_image` header stamps are the acoustic **transmit time of the ping, on the host clock** — the sonar head's internal clock cannot be set and is not used directly; the SDK correlates it to host time (measured stable to ~6 ms jitter), and the driver converts the SDK's native format (local time since 1980, per the GLF spec) to UTC Unix time.
+- Because stamps are host-clock based, cross-host timing (e.g. sonar vs. nav for SLAM) is only as good as the sync between vehicle computers — keep them NTP/PTP synced, and preferably on UTC.
 
 ## Services
 
 | Service | Type | Description |
 |---------|------|-------------|
-| `/gemini/start_sonar` | `StartSonar` | Start sonar pinging |
+| `/gemini/start_sonar` | `StartSonar` | Start sonar pinging (success only after ping data confirmed) |
 | `/gemini/stop_sonar` | `StopSonar` | Stop sonar pinging |
 
 ## Parameters
@@ -208,6 +243,11 @@ To run with verbosity output set to DEBUG use
 - Verify sonar is powered and connected to network and the subnet (i.e 192.168.2.x)
 - Check `sonar_id` matches your hardware or use id=0 if unknown
 
+### start_sonar fails with "no image data received"
+The head is **single-master**: it streams ping data to exactly one surface system, and only one Gemini-SDK process can run per machine. If Genesis (or another driver instance) owns the head, the driver sees status broadcasts but no pings.
+- Check `surface_ip` on `/gemini/status` (or the Connection diagnostic) — another host's IP there means that host owns the head
+- Close Genesis / stop the other instance and retry; use GLF logging + `glf_to_rosbag` if you need Genesis-format data alongside ROS
+
 ## Docs
 For full docs go to [gemini_sonar_driver](https://jakebonney10.github.io/gemini_sonar_driver/).
 
@@ -219,7 +259,7 @@ For full docs go to [gemini_sonar_driver](https://jakebonney10.github.io/gemini_
 - [ ] Log ping metadata in custom interfaace msg
 - [ ] add marine_acoustic_msgs detections and/or projection msg
 - [ ] Add parameter validation and bounds checking
-- [ ] Add diagnostic publishing for sonar health
+- [x] Add diagnostic publishing for sonar health
 - [ ] Utilize compression/decompression from SDK
 
 ## License

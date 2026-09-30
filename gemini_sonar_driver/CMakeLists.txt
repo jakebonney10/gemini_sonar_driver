@@ -12,6 +12,7 @@ set(ROS_DEPENDS
     marine_acoustic_msgs
     gemini_sonar_driver_interfaces
     rosbag2_cpp
+    diagnostic_updater
   )
 
 set(EXTERNAL_DEPENDS
