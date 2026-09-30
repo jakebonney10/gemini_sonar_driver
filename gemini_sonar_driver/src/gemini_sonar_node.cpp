@@ -163,16 +163,21 @@ void GeminiSonarNode::diagConnection(diagnostic_updater::DiagnosticStatusWrapper
     }
 
     std::string ip;
+    std::string surface_ip;
     uint16_t sonar_id = 0;
     {
         std::lock_guard<std::mutex> lock(diag_mutex_);
         if (have_status_) {
             ip = last_status_msg_.ip_address;
+            surface_ip = last_status_msg_.surface_ip;
             sonar_id = last_status_msg_.sonar_id;
         }
     }
     stat.add("sonar id", sonar_id);
     stat.add("ip address", ip);
+    // Which surface system the head is sending ping data to (0.0.0.0 = none).
+    // Another host's IP here means Genesis or another driver owns the head.
+    stat.add("surface ip", surface_ip);
     stat.add("seconds since last status", status_age_s);
 }
 
@@ -488,20 +493,23 @@ void GeminiSonarNode::processGLFImage(const GLF::GLogTargetImage& image)
                  ping_number_, metadata.num_beams);
 }
 
-void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus)
+// GLF status record IP fields are stored in little-endian format
+static std::string formatGlfIp(unsigned int ip)
 {
-    if (!pStatus) return;
-
-    // Format IP address (stored in little-endian format)
-    unsigned int ip = pStatus->m_sonarAltIp;
     std::ostringstream ip_stream;
     ip_stream << ((ip >> 0) & 0xFF) << "."
               << ((ip >> 8) & 0xFF) << "."
               << ((ip >> 16) & 0xFF) << "."
               << ((ip >> 24) & 0xFF);
-    RCLCPP_DEBUG(this->get_logger(), "Status from %d.%d.%d.%d (device ID: %u)",
-        (ip>>0) & 0xFF, (ip>>8) & 0xFF, (ip>>16) & 0xFF, (ip>>24) & 0xFF,
-        pStatus->m_deviceID);
+    return ip_stream.str();
+}
+
+void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus)
+{
+    if (!pStatus) return;
+
+    RCLCPP_DEBUG(this->get_logger(), "Status from %s (device ID: %u)",
+        formatGlfIp(pStatus->m_sonarAltIp).c_str(), pStatus->m_deviceID);
 
     // Check for critical status conditions
     if ((pStatus->m_BOOTSTSRegister & 0x000001ff) == 0x00000001)
@@ -521,7 +529,8 @@ void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus
     gemini_sonar_driver_interfaces::msg::GeminiStatus status_msg;
     status_msg.header.stamp = this->now();
     status_msg.header.frame_id = parameters_.frame_id;
-    status_msg.ip_address = ip_stream.str();
+    status_msg.ip_address = formatGlfIp(pStatus->m_sonarAltIp);
+    status_msg.surface_ip = formatGlfIp(pStatus->m_surfaceIp);
     status_msg.sonar_id = pStatus->m_deviceID;
     status_msg.bootloader_mode = ((pStatus->m_BOOTSTSRegister & 0x000001ff) == 0x00000001);
     status_msg.over_temperature = static_cast<bool>(pStatus->m_shutdownStatus & 0x0001);
