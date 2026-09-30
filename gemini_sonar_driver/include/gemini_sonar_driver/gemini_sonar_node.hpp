@@ -218,6 +218,18 @@ protected:
     bool waitForSonarDetection(int timeout_seconds);
 
     /**
+     * @brief Wait for ping image data to arrive from the sonar
+     *
+     * The sonar acknowledges the online request even when it never actually
+     * starts pinging, so a start is only confirmed once image data arrives.
+     *
+     * @param timeout_seconds Maximum time to wait in seconds
+     * @param baseline_pings Value of pings_received_ before going online
+     * @return true if a new ping arrived, false if timeout
+     */
+    bool waitForPingData(int timeout_seconds, uint32_t baseline_pings);
+
+    /**
      * @brief Helper to set SDK configuration with error logging
      * @param config_type The configuration type to set
      * @param size Size of the configuration data
@@ -246,6 +258,7 @@ protected:
     std::atomic<bool> sdk_initialized_{false};
     std::atomic<bool> sonar_detected_{false};        ///< True if we've received any messages from sonar
     std::atomic<uint64_t> last_message_time_{0};     ///< Timestamp of last received message
+    std::atomic<uint32_t> pings_received_{0};        ///< Count of GLF_LIVE_TARGET_IMAGE messages received
     
     // Data buffers (protected by mutex)
     std::mutex data_mutex_;

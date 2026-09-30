@@ -175,17 +175,17 @@ void GeminiSonarNode::handleStartSonar(
         response->success = true;
         response->message = "Sonar started successfully";
         RCLCPP_INFO(this->get_logger(), "%s", response->message.c_str());
+
+        if (request->enable_logging) {
+            const std::string& log_dir = request->log_directory.empty() ? parameters_.log_directory : request->log_directory;
+            startLogging(log_dir);
+        }
     }
     else
     {
         response->success = false;
-        response->message = "Failed to start sonar";
+        response->message = "Sonar did not start pinging (no image data received)";
         RCLCPP_ERROR(this->get_logger(), "%s", response->message.c_str());
-    }
-
-    if (request->enable_logging) {
-        const std::string& log_dir = request->log_directory.empty() ? parameters_.log_directory : request->log_directory;
-        startLogging(log_dir);
     }
 }
 
@@ -247,6 +247,7 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
         {
             GLF::GLogTargetImage* image = (GLF::GLogTargetImage*)value;
             RCLCPP_DEBUG(this->get_logger(), "Received GLF_LIVE_TARGET_IMAGE (sonar data)");
+            pings_received_++;
             processGLFImage(*image);
             break;
         }
@@ -404,13 +405,26 @@ bool GeminiSonarNode::waitForSonarDetection(int timeout_seconds)
 {
     auto start_time = std::chrono::steady_clock::now();
     auto timeout = std::chrono::seconds(timeout_seconds);
-    
-    while (!sonar_detected_ && 
+
+    while (!sonar_detected_ &&
            (std::chrono::steady_clock::now() - start_time) < timeout) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-    
+
     return sonar_detected_;
+}
+
+bool GeminiSonarNode::waitForPingData(int timeout_seconds, uint32_t baseline_pings)
+{
+    auto start_time = std::chrono::steady_clock::now();
+    auto timeout = std::chrono::seconds(timeout_seconds);
+
+    while (pings_received_.load() == baseline_pings &&
+           (std::chrono::steady_clock::now() - start_time) < timeout) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    return pings_received_.load() != baseline_pings;
 }
 
 void GeminiSonarNode::setSdkParameter(SequencerApi::ESvs5ConfigType config_type,
@@ -569,20 +583,28 @@ bool GeminiSonarNode::startPinging()
         return false;
     }
     
+    const uint32_t baseline_pings = pings_received_.load();
+
     bool online = true;
     configureSonar();
     setSdkParameter(SequencerApi::SVS5_CONFIG_ONLINE, sizeof(bool), &online, "online mode");
-    
-    sonar_streaming_ = true;
-    RCLCPP_INFO(this->get_logger(), "Sonar streaming started");
-    
-    if (!waitForSonarDetection(3)) {
-        RCLCPP_ERROR(this->get_logger(), "No response from sonar after starting pinging");
-        RCLCPP_ERROR(this->get_logger(), "Check that sonar is powered on and on same subnet i.e 192.168.2.x");
-        sonar_detected_ = false;
+
+    // The sonar acknowledges the online request even when it never actually
+    // starts pinging, and status messages keep arriving either way -- so only
+    // report success once ping image data shows up.
+    constexpr int kFirstPingTimeoutSec = 10;
+    if (!waitForPingData(kFirstPingTimeoutSec, baseline_pings)) {
+        RCLCPP_ERROR(this->get_logger(),
+            "Sonar acknowledged start but no ping data arrived within %d s; taking sonar back offline",
+            kFirstPingTimeoutSec);
+        RCLCPP_ERROR(this->get_logger(),
+            "Check sonar power/network, and that no other Gemini software is connected to the head");
+        stopPinging();
         return false;
     }
 
+    sonar_streaming_ = true;
+    RCLCPP_INFO(this->get_logger(), "Sonar streaming started (ping data confirmed)");
     return true;
 }
 
