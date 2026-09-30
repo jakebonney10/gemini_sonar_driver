@@ -22,7 +22,9 @@ set(EXTERNAL_DEPENDS_LIB
 
   )
 
-file(GLOB GEMINI_SDK_DIRS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/.." "${CMAKE_CURRENT_SOURCE_DIR}/../gemini_sdk*")
+file(GLOB GEMINI_SDK_DIRS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+  "${CMAKE_CURRENT_SOURCE_DIR}/../gemini_sdk*"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../GeminiSDK*")
 list(SORT GEMINI_SDK_DIRS)
 list(REVERSE GEMINI_SDK_DIRS)
 list(GET GEMINI_SDK_DIRS 0 GEMINI_SDK_VERSION_DIR)
@@ -98,8 +100,9 @@ foreach(NODE_FILE ${NODES})
   ament_target_dependencies(${NODE_NAME} ${ROS_DEPENDS} ${EXTERNAL_DEPENDS_LIB})
   target_include_directories(${NODE_NAME} PRIVATE "include/${PROJECT_NAME}/")
   
-  # Link Gemini SDK libraries (Svs5SeqLib includes GeminiComms, add GenesisSerializer for GLF processing)
-  target_link_libraries(${NODE_NAME} Svs5SeqLib GenesisSerializer)
+  # Link Gemini SDK libraries (GeminiComms linked directly for the GEM_/GEMX_
+  # low-level API used by gemini_set_ip; GenesisSerializer for GLF processing)
+  target_link_libraries(${NODE_NAME} Svs5SeqLib GeminiComms GenesisSerializer)
 
   # The SDK libs are bundled into <prefix>/lib (see install rules below), one
   # level up from this executable in <prefix>/lib/${PROJECT_NAME}, so a
