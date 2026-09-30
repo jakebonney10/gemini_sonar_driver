@@ -14,6 +14,7 @@
 
 // ROS2
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/version.h>
 #include <rclcpp/serialization.hpp>
 #include <rosbag2_cpp/writer.hpp>
 #include <rosbag2_cpp/writers/sequential_writer.hpp>
@@ -262,8 +263,14 @@ private:
             // Create bag message
             auto bag_message = std::make_shared<rosbag2_storage::SerializedBagMessage>();
             bag_message->topic_name = "/gemini/raw_sonar_image";
+            // SerializedBagMessage::time_stamp was split into recv/send
+            // timestamps in Jazzy (rclcpp >= 28)
+#if RCLCPP_VERSION_MAJOR >= 28
             bag_message->recv_timestamp = ros_time.nanoseconds();
             bag_message->send_timestamp = ros_time.nanoseconds();
+#else
+            bag_message->time_stamp = ros_time.nanoseconds();
+#endif
             bag_message->serialized_data = std::shared_ptr<rcutils_uint8_array_t>(
                 new rcutils_uint8_array_t,
                 [](rcutils_uint8_array_t* data) {
@@ -299,8 +306,12 @@ private:
             // Create bag message
             auto bag_message = std::make_shared<rosbag2_storage::SerializedBagMessage>();
             bag_message->topic_name = "/gemini/status";
+#if RCLCPP_VERSION_MAJOR >= 28
             bag_message->recv_timestamp = ros_time.nanoseconds();
             bag_message->send_timestamp = ros_time.nanoseconds();
+#else
+            bag_message->time_stamp = ros_time.nanoseconds();
+#endif
             bag_message->serialized_data = std::shared_ptr<rcutils_uint8_array_t>(
                 new rcutils_uint8_array_t,
                 [](rcutils_uint8_array_t* data) {
