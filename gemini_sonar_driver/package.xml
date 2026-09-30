@@ -17,6 +17,7 @@
   <depend>marine_acoustic_msgs</depend>
   <depend>gemini_sonar_driver_interfaces</depend>
   <depend>rosbag2_cpp</depend>
+  <depend>diagnostic_updater</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

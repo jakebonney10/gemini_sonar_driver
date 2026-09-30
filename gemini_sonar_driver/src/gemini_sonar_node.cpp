@@ -118,6 +118,154 @@ void GeminiSonarNode::Services::init(GeminiSonarNode* node)
 }
 
 //=============================================================================
+// Diagnostics
+//=============================================================================
+
+// Status broadcasts arrive at 1 Hz; pings at ~1-10 Hz depending on config
+static constexpr double kDiagStatusTimeoutSec = 3.0;
+static constexpr double kDiagPingTimeoutSec = 3.0;
+static constexpr double kDiagDiskFreeWarnPercent = 10.0;
+
+void GeminiSonarNode::Diagnostics::init(GeminiSonarNode* node)
+{
+    updater = std::make_shared<diagnostic_updater::Updater>(node);
+    updater->setHardwareID("gemini_sonar");
+
+    updater->add("Connection", node, &GeminiSonarNode::diagConnection);
+    updater->add("Streaming", node, &GeminiSonarNode::diagStreaming);
+    updater->add("Head Health", node, &GeminiSonarNode::diagHeadHealth);
+    updater->add("Logger", node, &GeminiSonarNode::diagLogger);
+}
+
+double GeminiSonarNode::ageSeconds(const std::atomic<int64_t>& stamp_ns)
+{
+    const int64_t last_ns = stamp_ns.load();
+    if (last_ns == 0) {
+        return -1.0;
+    }
+    const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now().time_since_epoch())
+                               .count();
+    return (now_ns - last_ns) * 1e-9;
+}
+
+void GeminiSonarNode::diagConnection(diagnostic_updater::DiagnosticStatusWrapper& stat)
+{
+    const double status_age_s = ageSeconds(last_status_steady_ns_);
+
+    if (status_age_s < 0.0) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN,
+                     "no status received yet -- sonar not detected on network");
+    } else if (status_age_s > kDiagStatusTimeoutSec) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "status timeout");
+    } else {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "receiving status");
+    }
+
+    std::string ip;
+    uint16_t sonar_id = 0;
+    {
+        std::lock_guard<std::mutex> lock(diag_mutex_);
+        if (have_status_) {
+            ip = last_status_msg_.ip_address;
+            sonar_id = last_status_msg_.sonar_id;
+        }
+    }
+    stat.add("sonar id", sonar_id);
+    stat.add("ip address", ip);
+    stat.add("seconds since last status", status_age_s);
+}
+
+void GeminiSonarNode::diagStreaming(diagnostic_updater::DiagnosticStatusWrapper& stat)
+{
+    const bool streaming = sonar_streaming_.load();
+    const double ping_age_s = ageSeconds(last_ping_steady_ns_);
+
+    if (!streaming) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK,
+                     "idle (not commanded to ping)");
+    } else if (ping_age_s < 0.0 || ping_age_s > kDiagPingTimeoutSec) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN,
+                     "commanded on but no recent ping data");
+    } else {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "pinging");
+    }
+
+    stat.add("commanded on", streaming);
+    stat.add("pings received", pings_received_.load());
+    stat.add("seconds since last ping", ping_age_s);
+}
+
+void GeminiSonarNode::diagHeadHealth(diagnostic_updater::DiagnosticStatusWrapper& stat)
+{
+    gemini_sonar_driver_interfaces::msg::GeminiStatus status;
+    bool have;
+    {
+        std::lock_guard<std::mutex> lock(diag_mutex_);
+        status = last_status_msg_;
+        have = have_status_;
+    }
+    if (!have) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::STALE, "no status from sonar yet");
+        return;
+    }
+
+    const double status_age_s = ageSeconds(last_status_steady_ns_);
+    if (status_age_s > kDiagStatusTimeoutSec) {
+        // Fields below reflect the last status, latched; flag it as stale
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::STALE, "no recent status");
+    } else if (status.bootloader_mode) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR,
+                     "sonar stuck in bootloader mode");
+    } else if (status.over_temperature) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "over temperature");
+    } else if (status.out_of_water) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "out of water");
+    } else if (status.shutdown_status != 0) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN,
+                     "shutdown status flags set");
+    } else {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "healthy");
+    }
+
+    stat.add("bootloader mode", status.bootloader_mode);
+    stat.add("over temperature", status.over_temperature);
+    stat.add("out of water", status.out_of_water);
+    stat.add("shutdown status", status.shutdown_status);
+    stat.add("boot status", status.boot_status);
+}
+
+void GeminiSonarNode::diagLogger(diagnostic_updater::DiagnosticStatusWrapper& stat)
+{
+    gemini_sonar_driver_interfaces::msg::LoggerStatus logger;
+    bool have;
+    {
+        std::lock_guard<std::mutex> lock(diag_mutex_);
+        logger = last_logger_msg_;
+        have = have_logger_info_;
+    }
+
+    if (!logging_active_.load()) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "not recording");
+    } else if (!have) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN,
+                     "recording commanded but no logger update from SDK yet");
+    } else if (logger.percent_disk_space_free < kDiagDiskFreeWarnPercent) {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::WARN, "recording, disk nearly full");
+    } else {
+        stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "recording");
+    }
+
+    if (have) {
+        stat.add("file", logger.file_name);
+        stat.add("records", logger.number_of_records);
+        stat.add("file size [bytes]", logger.file_size_bytes);
+        stat.add("disk space free [%]", logger.percent_disk_space_free);
+        stat.add("recording time left [s]", logger.recording_time_left_secs);
+    }
+}
+
+//=============================================================================
 // Constructor/Destructor
 //=============================================================================
 
@@ -130,9 +278,10 @@ GeminiSonarNode::GeminiSonarNode()
     parameters_.declare(this);
     parameters_.update(this);
 
-    // Initialize publishers and services
+    // Initialize publishers, services and diagnostics
     publishers_.init(this);
     services_.init(this);
+    diagnostics_.init(this);
 
     // Initialize SDK and set static instance for SDK callback
     instance_ = this;
@@ -239,6 +388,8 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
         {
             const GLF::GeminiSonarStatusMessage* const statusMsg = reinterpret_cast<const GLF::GeminiSonarStatusMessage*>(value);
             const GLF::GeminiStatusRecord* const pStatus = &statusMsg->m_geminiSonarStatus;
+            last_status_steady_ns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
             processGeminiStatus(pStatus);
             break;
         }
@@ -248,6 +399,8 @@ void GeminiSonarNode::handleSvs5Message(unsigned int messageType, unsigned int s
             GLF::GLogTargetImage* image = (GLF::GLogTargetImage*)value;
             RCLCPP_DEBUG(this->get_logger(), "Received GLF_LIVE_TARGET_IMAGE (sonar data)");
             pings_received_++;
+            last_ping_steady_ns_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
             processGLFImage(*image);
             break;
         }
@@ -376,8 +529,13 @@ void GeminiSonarNode::processGeminiStatus(const GLF::GeminiStatusRecord* pStatus
     status_msg.shutdown_status = static_cast<uint16_t>(pStatus->m_shutdownStatus & 0xFFFF);
     status_msg.boot_status = static_cast<uint16_t>(pStatus->m_BOOTSTSRegister & 0xFFFF);
 
-    publishers_.status_->publish(status_msg);
+    {
+        std::lock_guard<std::mutex> lock(diag_mutex_);
+        last_status_msg_ = status_msg;
+        have_status_ = true;
+    }
 
+    publishers_.status_->publish(status_msg);
 }
 
 void GeminiSonarNode::processLoggerRecUpdate(const GLF::SOutputFileInfo* loggerInfo)
@@ -393,6 +551,12 @@ void GeminiSonarNode::processLoggerRecUpdate(const GLF::SOutputFileInfo* loggerI
     logger_msg.disk_space_free_bytes = loggerInfo->m_diskSpaceFreeBytes;
     logger_msg.percent_disk_space_free = loggerInfo->m_percentDiskSpaceFree;
     logger_msg.recording_time_left_secs = loggerInfo->m_recordingTimeLeftSecs;
+
+    {
+        std::lock_guard<std::mutex> lock(diag_mutex_);
+        last_logger_msg_ = logger_msg;
+        have_logger_info_ = true;
+    }
 
     publishers_.logger_status_->publish(logger_msg);
 }
@@ -636,7 +800,8 @@ void GeminiSonarNode::startLogging(std::string log_directory)
 
     bool start_recording = true;
     setSdkParameter(SequencerApi::SVS5_CONFIG_REC, sizeof(bool), &start_recording, "recording");
-    
+
+    logging_active_ = true;
     RCLCPP_INFO(this->get_logger(), "Gemini data logging started to directory: %s", log_path.c_str());
 }
 
@@ -644,7 +809,8 @@ void GeminiSonarNode::stopLogging()
 {
     bool stop_recording = false;
     setSdkParameter(SequencerApi::SVS5_CONFIG_REC, sizeof(bool), &stop_recording, "recording (stop)");
-    
+
+    logging_active_ = false;
     RCLCPP_INFO(this->get_logger(), "Gemini data logging stopped");
 }
 

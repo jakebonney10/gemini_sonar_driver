@@ -6,6 +6,7 @@
 
 // ROS2 includes
 #include <rclcpp/rclcpp.hpp>
+#include <diagnostic_updater/diagnostic_updater.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <marine_acoustic_msgs/msg/projected_sonar_image.hpp>
 #include <marine_acoustic_msgs/msg/raw_sonar_image.hpp>
@@ -130,7 +131,17 @@ public:
     {
         rclcpp::Service<gemini_sonar_driver_interfaces::srv::StartSonar>::SharedPtr start_sonar_;
         rclcpp::Service<gemini_sonar_driver_interfaces::srv::StopSonar>::SharedPtr stop_sonar_;
-        
+
+        void init(GeminiSonarNode* node);
+    };
+
+    /**
+     * @brief Diagnostics (publishes to /diagnostics via diagnostic_updater)
+     */
+    struct Diagnostics
+    {
+        std::shared_ptr<diagnostic_updater::Updater> updater;
+
         void init(GeminiSonarNode* node);
     };
 
@@ -248,10 +259,20 @@ protected:
      */
     bool shouldAdvertise(const std::string& topic) const;
 
+    // Seconds since a steady-clock timestamp (ns), or -1 if it is still 0
+    static double ageSeconds(const std::atomic<int64_t>& stamp_ns);
+
+    // Diagnostic tasks -- run on the executor thread (updater timer)
+    void diagConnection(diagnostic_updater::DiagnosticStatusWrapper& stat);
+    void diagStreaming(diagnostic_updater::DiagnosticStatusWrapper& stat);
+    void diagHeadHealth(diagnostic_updater::DiagnosticStatusWrapper& stat);
+    void diagLogger(diagnostic_updater::DiagnosticStatusWrapper& stat);
+
     // Member variables
     Parameters parameters_;
     Publishers publishers_;
     Services services_;
+    Diagnostics diagnostics_;
 
     // SDK state
     std::atomic<bool> sonar_streaming_{false};
@@ -259,6 +280,17 @@ protected:
     std::atomic<bool> sonar_detected_{false};        ///< True if we've received any messages from sonar
     std::atomic<uint64_t> last_message_time_{0};     ///< Timestamp of last received message
     std::atomic<uint32_t> pings_received_{0};        ///< Count of GLF_LIVE_TARGET_IMAGE messages received
+    std::atomic<bool> logging_active_{false};        ///< True while GLF recording is commanded on
+
+    // Diagnostics state -- written from the SDK callback thread, read from the
+    // updater timer on the executor thread (steady clock, ns since epoch)
+    std::atomic<int64_t> last_status_steady_ns_{0};  ///< Last GEMINI_STATUS arrival
+    std::atomic<int64_t> last_ping_steady_ns_{0};    ///< Last GLF_LIVE_TARGET_IMAGE arrival
+    std::mutex diag_mutex_;
+    gemini_sonar_driver_interfaces::msg::GeminiStatus last_status_msg_;  ///< Latched copy of last published status
+    gemini_sonar_driver_interfaces::msg::LoggerStatus last_logger_msg_;  ///< Latched copy of last logger update
+    bool have_status_{false};
+    bool have_logger_info_{false};
     
     // Data buffers (protected by mutex)
     std::mutex data_mutex_;
