@@ -4,21 +4,36 @@
 #include <numeric>
 #include <array>
 #include <cstddef>
+#include <ctime>
 
 NS_HEAD
 
 namespace glf_processor
 {
 
+// GLF timestamps (m_dbTxTime) are HOST LOCAL time as seconds since
+// 1980-01-01 (Genesis Log File Format spec, 0716-SDS-00001). The SDK derives
+// them from the host clock, so converting epoch and timezone yields proper
+// UTC Unix time for ROS headers. The local-UTC offset is recomputed per ping
+// so a DST change mid-mission cannot skew subsequent stamps.
+static double glfToUnixSeconds(double glf_local_seconds)
+{
+    constexpr double kGlfEpochOffset = 315532800.0;  // 1970-01-01 -> 1980-01-01
+    std::time_t now = std::time(nullptr);
+    std::tm local_tm;
+    localtime_r(&now, &local_tm);
+    return glf_local_seconds + kGlfEpochOffset - local_tm.tm_gmtoff;
+}
+
 PingMetadata extractPingMetadata(
     const GLF::GMainImage& mainImage,
     uint32_t ping_number)
 {
     PingMetadata meta;
-    
+
     // Ping identification
     meta.ping_number = ping_number;
-    meta.transmit_time_seconds = mainImage.m_dbTxTime;
+    meta.transmit_time_seconds = glfToUnixSeconds(mainImage.m_dbTxTime);
     
     // Beam configuration
     if (mainImage.m_vecBearingTable) {
